@@ -92,11 +92,20 @@ No hay que crear nada. El buzón (`fan-avisos`) y la automatización de Atajos s
 
 - Los avisos deben llegar a una cuenta agregada en la app Mail del iPhone. Los nombres de las opciones pueden variar un poco según la versión de iOS.
 - El token da acceso solo a los *issues* de ese repositorio privado. Queda guardado en Atajos y, dentro de la app, solo en el dispositivo; no entra en los respaldos.
-- En **Buzón y atajo** la app muestra el último correo del banco que no era una compra y avisa si llegaron compras de otra tarjeta de crédito.
+- En **Buzón y atajo** la app muestra los últimos correos que llegaron al buzón y qué hizo con cada uno, y avisa si llegaron compras de otra tarjeta de crédito.
 - Para comprobar que Atajos funciona, mira la pestaña **Issues** del repositorio después de una compra: debe aparecer un *issue* nuevo con el texto del correo.
 - Una compra eliminada en la app no vuelve a aparecer al leer el buzón. Para recuperarla, se pega su aviso a mano con **Pegar un aviso**.
 - Las compras del buzón anteriores a la fecha de la deuda inicial entran como historial y no cambian el saldo.
 - La lectura del buzón funciona en la app publicada en GitHub Pages. Dentro de Claude, la página no puede llamar a GitHub y las compras se agregan pegando el aviso.
+
+### Si llega un correo y la compra no aparece
+
+1. Toca **Actualizar**. Al volver a la app, el buzón se relee solo si pasaron más de dos minutos desde la última lectura.
+2. Abre **Buzón y atajo** y mira **Últimos correos del buzón**. Ahí están los últimos correos que recibió el buzón, del más reciente al más antiguo, con lo que la app hizo con cada uno.
+3. Si el correo no está en la lista, no llegó al buzón: el problema está en la automatización de Atajos (no se ejecutó o GitHub rechazó el envío). Si está en la lista, la app dice por qué no lo registró: era una compra con cargo a la cuenta, en dólares, con otra tarjeta, una compra que eliminaste o un correo que no reconoce como aviso de compra.
+4. Mientras tanto, la compra se puede agregar con **Pegar un aviso**.
+
+El botón **Copiar este detalle** copia la lista con el texto de cada correo, para revisar un aviso que la app no reconoce.
 
 ## Instalar en el iPhone
 
