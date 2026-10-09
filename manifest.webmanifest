@@ -1,0 +1,17 @@
+{
+  "name": "Master",
+  "short_name": "Master",
+  "description": "Registro personal de las compras con la tarjeta de crédito: cupo disponible, cuotas y totales por titular y adicional, con las compras leídas de los avisos del banco.",
+  "lang": "es-CL",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#211b18",
+  "theme_color": "#211b18",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
