@@ -55,6 +55,8 @@ iOS no permite que una app web lea el correo ni reciba datos de otras apps mient
 
 No hay que crear nada. El buzón (`fan-avisos`) y la automatización de Atajos son los mismos: la automatización envía todos los correos del banco, FAN toma las compras de la cuenta y Master, las de la tarjeta de crédito.
 
+La única condición es que la automatización filtre **solo por remitente**. Si tiene una condición de asunto (por ejemplo, «cargo en cuenta»), hay que quitarla: los avisos de la tarjeta de crédito llegan con otro asunto y no pasarían al buzón.
+
 1. Abre FAN, entra a **Buzón y atajo** y toca **Copiar autorización**.
 2. Abre Master y toca **Conectar buzón**.
 3. Revisa el repositorio (`tu-usuario/fan-avisos`) y pega la autorización en **Token de acceso**. Se puede pegar tal cual, con la palabra `Bearer` delante.
@@ -80,7 +82,7 @@ No hay que crear nada. El buzón (`fan-avisos`) y la automatización de Atajos s
 **3. Crear la automatización en Atajos**
 
 1. Abre **Atajos**, entra a **Automatización** y toca **+**.
-2. Elige **Correo electrónico** y en **Remitente** escribe `enviodigital@bancochile.cl`.
+2. Elige **Correo electrónico** y en **Remitente** escribe `enviodigital@bancochile.cl`. Deja vacíos **Asunto** y los demás campos.
 3. Marca **Ejecutar inmediatamente**, toca **Siguiente** y elige **Nueva automatización en blanco**.
 4. Toca **Agregar acción**, busca «URL» y elige **Obtener contenido de URL**. En la URL pega `https://api.github.com/repos/tu-usuario/fan-avisos/issues`.
 5. Toca **Mostrar más** y en **Método** elige **POST**.
@@ -102,7 +104,7 @@ No hay que crear nada. El buzón (`fan-avisos`) y la automatización de Atajos s
 
 1. Toca **Actualizar**. Al volver a la app, el buzón se relee solo si pasaron más de dos minutos desde la última lectura.
 2. Abre **Buzón y atajo** y mira **Últimos correos del buzón**. Ahí están los últimos correos que recibió el buzón, del más reciente al más antiguo, con lo que la app hizo con cada uno.
-3. Si el correo no está en la lista, no llegó al buzón: el problema está en la automatización de Atajos (no se ejecutó o GitHub rechazó el envío). Si está en la lista, la app dice por qué no lo registró: era una compra con cargo a la cuenta, en dólares, con otra tarjeta, una compra que eliminaste o un correo que no reconoce como aviso de compra.
+3. Si el correo no está en la lista, no llegó al buzón: el problema está en la automatización de Atajos (tiene una condición de asunto que lo dejó fuera, no se ejecutó o GitHub rechazó el envío). Un correo que Atajos no envió en su momento no llega después: esa compra se agrega con **Pegar un aviso**. Si está en la lista, la app dice por qué no lo registró: era una compra con cargo a la cuenta, en dólares, con otra tarjeta, una compra que eliminaste o un correo que no reconoce como aviso de compra.
 4. Mientras tanto, la compra se puede agregar con **Pegar un aviso**.
 
 El botón **Copiar este detalle** copia la lista con el texto de cada correo, para revisar un aviso que la app no reconoce.
