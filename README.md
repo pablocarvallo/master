@@ -6,13 +6,13 @@ Es un registro personal. No es la app oficial del banco ni está conectada a la 
 
 ## Qué hace
 
-- **Disponible y utilizado**: se parte ingresando a mano la deuda pendiente (el cupo utilizado que muestra el banco). Con el cupo de $5.000.000, la app muestra el monto utilizado y el saldo disponible. Con **Ajustar** se vuelve a cuadrar la deuda o se cambia el cupo.
+- **Disponible, utilizado y total a pagar**: se parte ingresando a mano la deuda pendiente (el cupo utilizado que muestra el banco). Con el cupo de $5.000.000, la app muestra el saldo disponible, el monto utilizado y el total a pagar, que deja fuera las cuotas que vencen después de este mes. Con **Ajustar** se vuelve a cuadrar la deuda o se cambia el cupo.
 - **Lectura automática**: una automatización de Atajos envía cada correo del banco, apenas llega a Mail, a un buzón privado en GitHub. La app lee ese buzón al abrirse y agrega solo las compras con tarjeta de crédito que falten. Un mismo aviso nunca se registra dos veces.
 - **Titular o Adicional**: el aviso trae los últimos cuatro dígitos de la tarjeta. `****9908` se registra como Titular y `****4526` como Adicional.
 - **Compra, cargo y abono a mano**: cada compra y cada cargo (−) restan del disponible; cada abono (+) suma. Sirve para los cobros de la tarjeta (comisiones, intereses, seguros) y para los pagos o devoluciones.
-- **Compras en cuotas**: se ingresan con el monto total y el número de cuotas. Una sección aparte muestra cada compra con sus cuotas pagadas, las pendientes y lo que falta por pagar. Una compra leída de un aviso se convierte en compra en cuotas al tocarla e indicar sus cuotas.
+- **Compras en cuotas**: se ingresan con el monto total, el número de cuotas y el mes en que se paga la cuota 1. Una sección aparte muestra cada compra con sus cuotas pagadas, la cuota de este mes y las que vencen después. Una compra leída de un aviso se convierte en compra en cuotas al tocarla e indicar sus cuotas.
 - **Totales por tarjeta**: cuánto suman las compras del Titular y del Adicional, más los cargos y los abonos.
-- **Extracto**: un botón genera el detalle de todos los movimientos desde la deuda inicial, con el total a pagar. Se copia como texto o se comparte.
+- **Extracto**: un botón genera el detalle de todos los movimientos desde la deuda inicial, con el utilizado, las cuotas que vencen después y el total a pagar. Se copia como texto o se comparte.
 - **Borrar un registro**: al tocar un movimiento se corrige o se elimina. Hay unos segundos para deshacer.
 - **Datos y respaldo**: copia todos los datos como texto y los restaura desde ahí.
 
@@ -21,10 +21,13 @@ Es un registro personal. No es la app oficial del banco ni está conectada a la 
 - **Utilizado** = deuda inicial + compras + cargos − abonos, contando los movimientos desde la fecha de esa deuda.
 - **Disponible** = cupo − utilizado.
 - Los movimientos anteriores a la fecha de la deuda inicial ya están dentro de ella: quedan como historial y no cambian el saldo.
-- Una compra en cuotas ocupa el cupo por su monto total desde el día de la compra, igual que en el banco, y se libera con cada abono.
-- Marcar una cuota como pagada no cambia el saldo. El disponible sube cuando se anota el abono. Al anotar un abono se puede marcar, en el mismo paso, una cuota pagada en todas las compras en cuotas.
+- **Total a pagar** = utilizado − cuotas que vencen después de este mes. Si no hay compras en cuotas, es igual al utilizado.
+- Una compra en cuotas ocupa el cupo por su monto total desde el día de la compra, igual que en el banco, y se libera con cada abono. Por eso el disponible calza con el del banco aunque el total a pagar sea menor.
+- Las cuotas se cuentan por mes calendario. La cuota 1 se paga en el mes indicado al anotar la compra (por omisión, el mes siguiente a la compra) y las demás, una por mes. Las de meses anteriores cuentan como pagadas, la de este mes entra en el total a pagar y las de meses siguientes quedan fuera hasta que llegue su mes.
+- Ejemplo: una compra en 2 cuotas con la cuota 1 en octubre. En octubre, el total a pagar incluye la cuota 1 y deja fuera la cuota 2, que entra en noviembre.
+- Las cuotas no se marcan a mano y no cambian el saldo. El disponible sube cuando se anota el abono.
 - El valor de cada cuota es el total dividido en partes iguales, sin intereses. Si la compra tiene interés, conviene ingresar como monto total lo que se va a pagar en total.
-- En el extracto, **Total a pagar** es toda la deuda (el monto utilizado). Si hay compras en cuotas, el extracto indica además cuánto de ese total son cuotas pendientes, cuánto suma la cuota del mes y un pago del mes estimado: el total menos las cuotas que vencen en los meses siguientes.
+- Una compra en cuotas anterior a la deuda inicial se anota con su fecha real: queda como historial, no cambia el saldo y sus cuotas futuras igual se descuentan del total a pagar.
 
 ## Formato del aviso
 
@@ -119,7 +122,7 @@ Se abre como app independiente, con su icono, y funciona sin conexión.
 
 Los movimientos y la deuda quedan en el `localStorage` del navegador, en el dispositivo. Este repositorio solo contiene el código de la app. Los correos del banco pasan por el buzón, que es un repositorio privado aparte.
 
-- `master-movimientos`: cada movimiento con tipo (`c` compra, `g` cargo, `a` abono), fecha (`date`), hora (`time`), descripción (`desc`), monto en pesos (`amount`), origen (`mail` o `manual`), tarjeta (`who`: `T` titular o `A` adicional; `card`: los cuatro dígitos del aviso), número de cuotas (`n`), cuotas pagadas (`paid`) y, en las compras leídas de un aviso, la clave que evita duplicados (`key`).
+- `master-movimientos`: cada movimiento con tipo (`c` compra, `g` cargo, `a` abono), fecha (`date`), hora (`time`), descripción (`desc`), monto en pesos (`amount`), origen (`mail` o `manual`), tarjeta (`who`: `T` titular o `A` adicional; `card`: los cuatro dígitos del aviso), número de cuotas (`n`), mes en que se paga la cuota 1 (`first`, como `aaaa-mm`) y, en las compras leídas de un aviso, la clave que evita duplicados (`key`).
 - `master-tarjeta`: la deuda inicial (`debt`), desde cuándo rige (`at`), el cupo (`limit`) y los avisos eliminados a propósito (`ignored`).
 - `master-preferencias`: orden del listado, repositorio y token del buzón, y momento de la última lectura.
 

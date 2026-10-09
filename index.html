@@ -215,6 +215,7 @@ svg { display: block; }
 .hero-stats div { min-width: 0; }
 .hero-stats dt { font-size: 13px; color: var(--on-card-muted); }
 .hero-stats dd { margin: 2px 0 0; font-weight: 700; font-size: 17px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.hero-stats small { display: block; margin-top: 2px; font-size: 12px; line-height: 1.3; color: var(--on-card-muted); }
 
 /* Acciones principales */
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -281,14 +282,12 @@ svg { display: block; }
 .cq-bar { display: flex; gap: 3px; height: 10px; }
 .cq-bar i { flex: 1 1 0; min-width: 0; border-radius: 3px; background: var(--track); }
 .cq-bar i.on { background: var(--in); }
-.cq-nums { margin: 0; display: grid; grid-template-columns: repeat(3, auto); justify-content: space-between; gap: 8px; }
+.cq-bar i.cur { background: var(--ink); }
+.cq-nums { margin: 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; }
 .cq-nums div { min-width: 0; }
 .cq-nums dt { font-size: 13px; color: var(--muted); }
 .cq-nums dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.cq-nums div:last-child { text-align: right; }
-.cq-act { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
-.cq-act .btn { min-width: 0; }
-.cq-act .back { width: 48px; padding: 0; }
+.cq-when { margin: 0; font-size: 13px; color: var(--muted); }
 .cq-total { margin: 0; padding: 12px 14px; border-radius: 16px; background: var(--accent-bg); display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
 .cq-total div { min-width: 0; }
 .cq-total dt { font-size: 13px; color: var(--muted); }
@@ -359,7 +358,6 @@ svg { display: block; }
 .field textarea { font-size: 16px; min-height: 104px; }
 .field .hint { font-size: 14px; font-weight: 400; color: var(--muted); }
 .pair { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 10px; }
-.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .price-wrap { position: relative; }
 .price-wrap b { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 600; pointer-events: none; }
 .price-wrap input { padding-left: 30px !important; font-variant-numeric: tabular-nums; }
@@ -371,10 +369,7 @@ svg { display: block; }
 .stepper button { min-height: 52px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--bg); display: grid; place-items: center; padding: 0; }
 .stepper button:active { background: var(--track); }
 .stepper input { text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
-.check { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--bg); font-size: 15px; }
-.check input { width: 24px; height: 24px; margin: 0; accent-color: var(--in); }
-.check b { display: block; font-weight: 600; }
-.check span span { color: var(--muted); font-size: 14px; }
+.step-val { display: grid; place-items: center; min-height: 52px; min-width: 0; box-sizing: border-box; padding: 0 8px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--bg); font-weight: 600; text-align: center; }
 .err { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--over-bg); color: var(--over); font-weight: 600; font-size: 15px; }
 .note { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--accent-bg); color: var(--ink); font-size: 14px; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
@@ -398,6 +393,8 @@ svg { display: block; }
 .ext-kv dt { color: var(--muted); min-width: 0; }
 .ext-kv dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ext-kv dd.in { color: var(--in); }
+.ext-kv .sum { padding-top: 6px; border-top: 1px solid var(--line); }
+.ext-kv .sum dt { color: var(--ink); font-weight: 600; }
 .ext-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--line); }
 .ext-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
 .ext-list b { font-weight: 600; overflow-wrap: anywhere; }
@@ -438,6 +435,7 @@ svg { display: block; }
   var MAX_N = 60;                      // máximo de cuotas de una compra
 
   var MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  var MESL = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   var LS_KEY = 'master-movimientos';
   var LS_CFG = 'master-tarjeta';
   var LS_PREFS = 'master-preferencias';
@@ -446,6 +444,7 @@ svg { display: block; }
   var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   var TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
   var AT_RE = /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/;
+  var YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
   var MAX_AMOUNT = 9999999999;
   var MAX_IGNORED = 400;
   var PAGE = 80;
@@ -472,7 +471,6 @@ svg { display: block; }
   var I_OUT = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 15V4M12 4L7.8 8.2M12 4l4.2 4.2M5 19.5h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var I_CHECK = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var I_DOC = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M7.5 3.5H14l4.5 4.5v11a1.5 1.5 0 0 1-1.5 1.5H7.5A1.5 1.5 0 0 1 6 19V5a1.5 1.5 0 0 1 1.5-1.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.5 12.5h5M9.5 16.5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
-  var I_BACK = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M9 7L4.5 11.5 9 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 11.5h9a5 5 0 0 1 0 10h-2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
 
   var app = document.getElementById('app');
   var sheetEl = document.getElementById('sheet');
@@ -520,6 +518,11 @@ svg { display: block; }
     return fmt(k);
   }
   function fmtAt(at) { return fmt(at.slice(0, 10)) + ', ' + at.slice(11); }
+  // Meses como 'aaaa-mm'
+  function thisMonth() { return todayKey().slice(0, 7); }
+  function addMonths(k, d) { var t = +k.slice(0, 4) * 12 + (+k.slice(5, 7) - 1) + d; return Math.floor(t / 12) + '-' + pad(t % 12 + 1); }
+  function monthsFrom(a, b) { return (+b.slice(0, 4) - +a.slice(0, 4)) * 12 + (+b.slice(5, 7) - +a.slice(5, 7)); }
+  function monthName(k) { return MESL[+k.slice(5, 7) - 1] + ' ' + k.slice(0, 4); }
   function dots(n) { return String(Math.round(Math.abs(n))).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
   function money(n) { return (n < 0 ? '−' : '') + '$' + dots(n); }
   function plural(n, s, p) { return n === 1 ? s : p; }
@@ -573,6 +576,7 @@ svg { display: block; }
 
   /* ---------- Datos ---------- */
   // Tipos: 'c' compra (con tarjeta Titular o Adicional, de contado o en cuotas), 'g' cargo de la tarjeta, 'a' abono.
+  // Una compra en cuotas guarda en «first» el mes en que se paga la cuota 1; si falta, es el mes siguiente a la compra.
   function norm(p) {
     if (!p) return null;
     var date = validDate(String(p.date)) ? String(p.date) : null;
@@ -593,11 +597,11 @@ svg { display: block; }
       card: /^\d{4}$/.test(String(p.card || '')) ? String(p.card) : '',
       who: type === 'c' ? (p.who === 'A' ? 'A' : 'T') : '',
       n: n,
-      paid: n > 1 ? Math.min(n, Math.max(0, Math.round(+p.paid) || 0)) : 0,
+      first: n > 1 ? (YM_RE.test(String(p.first)) ? String(p.first) : addMonths(date.slice(0, 7), 1)) : '',
       ts: +p.ts > 0 ? +p.ts : 0
     };
   }
-  function toDoc(m) { return { type: m.type, date: m.date, time: m.time, desc: m.desc, amount: m.amount, src: m.src, key: m.key, card: m.card, who: m.who, n: m.n, paid: m.paid, ts: m.ts }; }
+  function toDoc(m) { return { type: m.type, date: m.date, time: m.time, desc: m.desc, amount: m.amount, src: m.src, key: m.key, card: m.card, who: m.who, n: m.n, first: m.first, ts: m.ts }; }
   function copyOf(m, changes) { var c = toDoc(m); c.id = m.id; Object.keys(changes || {}).forEach(function (k) { c[k] = changes[k]; }); return c; }
   function normCfg(c) {
     c = c || {};
@@ -618,10 +622,33 @@ svg { display: block; }
   function dtOf(m) { return m.date + 'T' + m.time; }
   function uses(m) { return m.type === 'a' ? -m.amount : m.amount; }   // cuánto cupo ocupa: compras y cargos suman, abonos restan
 
+  // Cuotas: el total se divide en partes iguales y la última absorbe el redondeo. La cuota 1 se paga en el mes
+  // «first» y las demás, una por mes. Las de meses anteriores cuentan como pagadas, la de este mes entra en el
+  // total a pagar y las de meses siguientes ocupan cupo, pero todavía no se pagan.
+  function cuotaVal(m) { return Math.floor(m.amount / m.n); }
+  function cuotaAmt(m, k) { return k === m.n ? m.amount - cuotaVal(m) * (m.n - 1) : cuotaVal(m); }
+  function cuotaState(m) {
+    var i = monthsFrom(m.first, thisMonth());                          // 0: la cuota 1 se paga este mes
+    var paid = Math.max(0, Math.min(m.n, i)), now = i >= 0 && i < m.n ? i + 1 : 0;
+    var paidAmt = paid >= m.n ? m.amount : paid * cuotaVal(m), nowAmt = now ? cuotaAmt(m, now) : 0;
+    return { paid: paid, now: now, later: m.n - paid - (now ? 1 : 0), paidAmt: paidAmt, nowAmt: nowAmt, laterAmt: m.amount - paidAmt - nowAmt, end: addMonths(m.first, m.n - 1) };
+  }
+  function cuotasInfo() {
+    var q = { active: [], done: [], nowAmt: 0, nowN: 0, laterAmt: 0, laterN: 0 };
+    items.forEach(function (m) {
+      if (m.type !== 'c' || m.n < 2) return;
+      var st = cuotaState(m);
+      if (st.paid >= m.n) { q.done.push(m); return; }
+      q.active.push(m); q.nowAmt += st.nowAmt; q.nowN += st.now ? 1 : 0; q.laterAmt += st.laterAmt; q.laterN += st.later;
+    });
+    return q;
+  }
+
   // Utilizado = deuda inicial + compras y cargos − abonos, contando desde la fecha de esa deuda.
   // Disponible = cupo − utilizado. Lo anterior a la deuda inicial ya está dentro de ella y queda como historial.
+  // Total a pagar = utilizado − cuotas que vencen después de este mes.
   function compute() {
-    var on = !!cfg.at, used = on ? cfg.debt : 0, rows = [], since = 0;
+    var on = !!cfg.at, used = on ? cfg.debt : 0, rows = [], since = 0, q = cuotasInfo();
     var t = { T: 0, A: 0, g: 0, a: 0, nT: 0, nA: 0, ng: 0, na: 0 };
     items.forEach(function (m) {
       var counts = on && dtOf(m) >= cfg.at, run = null;
@@ -632,22 +659,7 @@ svg { display: block; }
       }
       rows.push({ m: m, counts: counts, run: run });
     });
-    return { used: used, avail: cfg.limit - used, rows: rows, since: since, t: t };
-  }
-
-  // Cuotas: el valor de cada una es el total dividido en partes iguales; la última absorbe el redondeo.
-  function cuotaVal(m) { return Math.round(m.amount / m.n); }
-  function paidAmt(m) { return m.paid >= m.n ? m.amount : Math.min(m.amount, m.paid * cuotaVal(m)); }
-  function pendAmt(m) { return m.amount - paidAmt(m); }
-  function nextCuota(m) { var left = m.n - m.paid; return left <= 0 ? 0 : left === 1 ? pendAmt(m) : cuotaVal(m); }
-  function cuotasInfo() {
-    var q = { active: [], done: [], left: 0, pend: 0, month: 0 };
-    items.forEach(function (m) {
-      if (m.type !== 'c' || m.n < 2) return;
-      if (m.paid >= m.n) { q.done.push(m); return; }
-      q.active.push(m); q.left += m.n - m.paid; q.pend += pendAmt(m); q.month += nextCuota(m);
-    });
-    return q;
+    return { used: used, avail: cfg.limit - used, due: Math.max(0, used - q.laterAmt), rows: rows, since: since, t: t, q: q };
   }
 
   function loadLocal() {
@@ -759,7 +771,7 @@ svg { display: block; }
         if (source === 'box') { known++; return; }     // se eliminó a propósito: el buzón no la devuelve
         back.push(p.key);                               // pegarla a mano sí la recupera
       }
-      ups.push({ id: 'm' + hash(p.key), type: 'c', date: p.date, time: p.time, desc: p.merchant, amount: p.amount, src: 'mail', key: p.key, card: p.card, who: p.who, n: p.n, paid: 0, ts: Date.now() });
+      ups.push({ id: 'm' + hash(p.key), type: 'c', date: p.date, time: p.time, desc: p.merchant, amount: p.amount, src: 'mail', key: p.key, card: p.card, who: p.who, n: p.n, ts: Date.now() });
     });
     return { ups: ups, known: known, back: back };
   }
@@ -937,8 +949,9 @@ svg { display: block; }
         '<div class="meter' + (pct <= 0 ? ' zero' : '') + (c.avail < 0 ? ' full' : '') + '" role="img" aria-label="Utilizado ' + pctTxt + ' del cupo"><i style="width:' + pct.toFixed(2) + '%"></i></div>';
       if (c.avail < 0) h += '<p class="hero-note warn">Lo utilizado supera el cupo en ' + money(-c.avail) + '. Revisa si falta un abono o ajusta la deuda.</p>';
       else if (c.used < 0) h += '<p class="hero-note warn">Los abonos superan la deuda: hay ' + money(-c.used) + ' a favor. Revisa los montos o ajusta la deuda.</p>';
-      else h += '<p class="hero-note">Utilizado ' + pctTxt + ' del cupo · ' + (c.since ? c.since + ' ' + plural(c.since, 'movimiento', 'movimientos') + ' desde el ' + fmt(cfg.at.slice(0, 10)) : 'sin movimientos desde el ' + fmt(cfg.at.slice(0, 10))) + '</p>';
-      h += '<dl class="hero-stats"><div><dt>Utilizado</dt><dd>' + money(c.used) + '</dd></div><div><dt>Cupo</dt><dd>' + money(cfg.limit) + '</dd></div></dl>';
+      else h += '<p class="hero-note">Utilizado ' + pctTxt + ' del cupo de ' + money(cfg.limit) + '</p>';
+      h += '<dl class="hero-stats"><div><dt>Utilizado</dt><dd>' + money(c.used) + '</dd></div><div><dt>Total a pagar</dt><dd>' + money(c.due) + '</dd>' +
+        (c.q.laterAmt > 0 ? '<small>Sin ' + money(c.q.laterAmt) + ' en cuotas que vencen después</small>' : '') + '</div></dl>';
     }
     return h + '</section>';
   }
@@ -997,25 +1010,23 @@ svg { display: block; }
     return h + '<button class="btn tonal block" data-act="extract">' + I_DOC + 'Generar extracto</button></section>';
   }
 
-  function cuotaBar(m) {
-    var h = '<div class="cq-bar" role="img" aria-label="' + m.paid + ' de ' + m.n + ' cuotas pagadas">';
-    if (m.n <= 24) { for (var i = 0; i < m.n; i++) h += '<i' + (i < m.paid ? ' class="on"' : '') + '></i>'; }
-    else h += (m.paid ? '<i class="on" style="flex:' + m.paid + ' 1 0"></i>' : '') + (m.n > m.paid ? '<i style="flex:' + (m.n - m.paid) + ' 1 0"></i>' : '');
+  function cuotaBar(m, st) {
+    var h = '<div class="cq-bar" role="img" aria-label="' + st.paid + ' de ' + m.n + ' cuotas pagadas' + (st.now ? ', la cuota ' + st.now + ' se paga este mes' : '') + '">';
+    if (m.n <= 24) { for (var i = 1; i <= m.n; i++) h += '<i' + (i <= st.paid ? ' class="on"' : i === st.now ? ' class="cur"' : '') + '></i>'; }
+    else h += (st.paid ? '<i class="on" style="flex:' + st.paid + ' 1 0"></i>' : '') + (st.now ? '<i class="cur" style="flex:1 1 0"></i>' : '') + (st.later ? '<i style="flex:' + st.later + ' 1 0"></i>' : '');
     return h + '</div>';
   }
   function cuotaCard(m) {
-    var left = m.n - m.paid, done = left <= 0;
-    var h = '<li class="cq' + (done ? ' done' : '') + '">' +
+    var st = cuotaState(m), done = st.paid >= m.n;
+    return '<li class="cq' + (done ? ' done' : '') + '">' +
       '<button class="cq-head" data-act="edit" data-id="' + m.id + '" aria-label="Editar compra en cuotas: ' + esc(m.desc) + '">' +
       '<span class="store">' + esc(m.desc) + '</span><span class="amt">' + money(m.amount) + '</span>' +
       '<span class="meta"><span class="pill ' + m.who + '">' + WHO[m.who] + '</span>' + fmtFull(m.date) + ' · ' + m.n + ' cuotas de ' + money(cuotaVal(m)) + '</span></button>' +
-      cuotaBar(m) +
-      '<dl class="cq-nums"><div><dt>Pagadas</dt><dd>' + m.paid + ' de ' + m.n + '</dd></div><div><dt>Pendientes</dt><dd>' + left + '</dd></div><div><dt>Por pagar</dt><dd>' + money(pendAmt(m)) + '</dd></div></dl>' +
-      '<div class="cq-act">' +
-      '<button class="btn ghost small back" data-act="unpay" data-id="' + m.id + '"' + (m.paid ? '' : ' disabled') + ' aria-label="Desmarcar la última cuota pagada de ' + esc(m.desc) + '">' + I_BACK + '</button>';
-    if (done) h += '<button class="btn ghost small" disabled>' + I_CHECK + 'Pagada completa</button>';
-    else h += '<button class="btn tonal small" data-act="pay" data-id="' + m.id + '">Marcar pagada la cuota ' + (m.paid + 1) + '</button>';
-    return h + '</div></li>';
+      cuotaBar(m, st) +
+      '<dl class="cq-nums"><div><dt>Pagadas</dt><dd>' + st.paid + ' de ' + m.n + '</dd></div>' +
+      '<div><dt>Este mes' + (st.now ? ' · cuota ' + st.now : '') + '</dt><dd>' + money(st.nowAmt) + '</dd></div>' +
+      '<div><dt>Después' + (st.later ? ' · ' + st.later + ' ' + plural(st.later, 'cuota', 'cuotas') : '') + '</dt><dd>' + money(st.laterAmt) + '</dd></div></dl>' +
+      '<p class="cq-when">' + (done ? 'Terminó en ' + monthName(st.end) : 'Cuota 1 en ' + monthName(m.first) + ' · última en ' + monthName(st.end)) + '</p></li>';
   }
   function cuotasBlock() {
     var q = cuotasInfo(), any = q.active.length + q.done.length;
@@ -1025,11 +1036,10 @@ svg { display: block; }
       return h + '<p class="empty">Aún no hay compras en cuotas. Agrega una con el monto total y el número de cuotas. Si llegó por un aviso, tócala en Movimientos e indica sus cuotas.</p></section>';
     }
     if (q.active.length) {
-      h += '<dl class="cq-total"><div><dt>Cuotas pendientes</dt><dd>' + q.left + '</dd></div><div><dt>Por pagar en cuotas</dt><dd>' + money(q.pend) + '</dd></div>' +
-        '<div><dt>Compras en curso</dt><dd>' + q.active.length + '</dd></div><div><dt>Cuota de este mes</dt><dd>' + money(q.month) + '</dd></div></dl>';
+      h += '<dl class="cq-total"><div><dt>Cuotas de este mes</dt><dd>' + money(q.nowAmt) + '</dd></div><div><dt>Vencen después</dt><dd>' + money(q.laterAmt) + '</dd></div>' +
+        '<div><dt>Compras en curso</dt><dd>' + q.active.length + '</dd></div><div><dt>Cuotas por vencer</dt><dd>' + q.laterN + '</dd></div></dl>';
       h += '<ul class="cuotas">' + q.active.slice().reverse().map(cuotaCard).join('') + '</ul>';
-      if (q.active.length > 1) h += '<button class="btn ghost block" data-act="pay-all">Marcar pagada una cuota en las ' + q.active.length + ' compras</button>';
-      h += '<p class="muted fine">Marcar una cuota no cambia el saldo: el disponible sube cuando anotas el abono.</p>';
+      h += '<p class="muted fine">Las cuotas que vencen después de ' + MESL[+thisMonth().slice(5, 7) - 1] + ' ocupan cupo, pero no entran en el total a pagar. La app las cuenta por mes, a partir del mes de la cuota 1.</p>';
     } else {
       h += '<p class="empty">No quedan cuotas pendientes.</p>';
     }
@@ -1140,7 +1150,7 @@ svg { display: block; }
     var type = s.type, mail = !!p && p.src === 'mail', k = KIND[type];
     var title = p ? (mail ? 'Compra del aviso' : type === 'a' ? 'Editar abono' : type === 'g' ? 'Editar cargo' : 'Editar compra') : 'Anotar movimiento';
     var dateV = p ? p.date : today, timeV = p ? p.time : nowTime();
-    var note = anchorNote(dateV, timeV), q = cuotasInfo(), after = '';
+    var note = anchorNote(dateV, timeV), after = '';
     if (p) compute().rows.forEach(function (r) { if (r.m.id === p.id && r.run !== null) after = ' Después de este movimiento el disponible quedó en <strong>' + money(r.run) + '</strong>.'; });
     var h = '<form class="panel" id="sheet-form" novalidate role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">' +
       '<h2 id="sheet-title">' + title + '</h2>';
@@ -1157,11 +1167,12 @@ svg { display: block; }
       '<div class="stack" id="f-buy"' + (type === 'c' ? '' : ' hidden') + '>' +
       '<div class="field"><span>Tarjeta</span><div class="seg" role="group" aria-label="Tarjeta de la compra">' +
       ['T', 'A'].map(function (w) { return '<button type="button" data-act="who" data-w="' + w + '" aria-pressed="' + (s.who === w) + '">' + WHO[w] + '</button>'; }).join('') + '</div></div>' +
-      '<div class="duo">' + stepField('f-n', 'Cuotas', p ? p.n : s.n, '') +
-      '<div id="f-paid-wrap">' + stepField('f-paid', 'Ya pagadas', p ? p.paid : 0, '') + '</div></div>' +
+      stepField('f-n', 'Cuotas', p ? p.n : s.n, '') +
+      '<div class="field" id="f-first-wrap"><span id="f-first-label">La cuota 1 se paga en</span><div class="stepper">' +
+      '<button type="button" data-act="month" data-d="-1" aria-label="Mes anterior">' + I_MINUS + '</button>' +
+      '<output class="step-val" id="f-first" aria-labelledby="f-first-label">' + monthName(s.first) + '</output>' +
+      '<button type="button" data-act="month" data-d="1" aria-label="Mes siguiente">' + I_PLUS + '</button></div></div>' +
       '<p class="note" id="f-cuota"></p></div>' +
-      '<label class="check" id="f-month-wrap"' + (!p && type === 'a' && q.active.length ? '' : ' hidden') + '><input type="checkbox" id="f-month"><span><b>Con este abono pagué la cuota del mes</b>' +
-      '<span>Marca una cuota pagada en ' + (q.active.length === 1 ? 'la compra en cuotas' : 'las ' + q.active.length + ' compras en cuotas') + '.</span></span></label>' +
       '<div class="pair"><label class="field"><span>Fecha</span><input type="date" id="f-date" value="' + dateV + '" max="' + today + '" required></label>' +
       '<label class="field"><span>Hora</span><input type="time" id="f-time" value="' + timeV + '" required></label></div>' +
       '<p class="note" id="f-note"' + (note ? '' : ' hidden') + '>' + note + '</p>' +
@@ -1171,15 +1182,18 @@ svg { display: block; }
       '<button type="button" class="btn ghost block" data-act="cancel">Cancelar</button></div></form>';
     return h;
   }
-  // Muestra el valor de cada cuota y esconde «Ya pagadas» cuando la compra es de contado
+  // Muestra el valor de cada cuota y los meses en que se pagan; el mes de la cuota 1 solo se pide si hay cuotas
   function cuotaPreview() {
-    var out = document.getElementById('f-cuota'), wrap = document.getElementById('f-paid-wrap');
-    if (!out || !wrap) return;
+    var out = document.getElementById('f-cuota'), wrap = document.getElementById('f-first-wrap'), lab = document.getElementById('f-first');
+    if (!out || !wrap || !sheet) return;
     var n = +val('f-n'), amount = +digits('f-amount'), ok = n >= 2 && n <= MAX_N;
-    wrap.style.visibility = ok ? '' : 'hidden';
-    if (!ok) out.textContent = 'Sin cuotas: se paga de una vez. Sube el número si fue en cuotas.';
-    else if (amount > 0) out.textContent = n + ' cuotas de ' + money(Math.round(amount / n)) + '. El total ocupa el cupo desde la compra y se libera con cada abono.';
-    else out.textContent = n + ' cuotas. Escribe el monto total para ver el valor de cada una.';
+    wrap.hidden = !ok;
+    if (lab) lab.textContent = monthName(sheet.first);
+    if (!ok) { out.textContent = 'Sin cuotas: se paga de una vez. Sube el número si fue en cuotas.'; return; }
+    var end = addMonths(sheet.first, n - 1);
+    out.textContent = (amount > 0 ? n + ' cuotas de ' + money(Math.floor(amount / n)) : n + ' cuotas') + ', ' +
+      (n === 2 ? 'en ' + monthName(sheet.first) + ' y ' + monthName(end) : 'de ' + monthName(sheet.first) + ' a ' + monthName(end)) +
+      '. El total ocupa el cupo desde la compra; al total a pagar entra la cuota de cada mes.';
   }
 
   function sheetSetup() {
@@ -1268,13 +1282,17 @@ svg { display: block; }
 
   /* ---------- Extracto ---------- */
   // Todos los movimientos desde la deuda inicial, con el total a pagar. Aquí los montos van como deuda:
-  // compras y cargos en positivo, abonos en negativo.
+  // compras y cargos en positivo, abonos en negativo. El total a pagar deja fuera las cuotas que vencen después.
   function buildExtract() {
-    var c = compute(), t = c.t, q = cuotasInfo(), now = todayKey();
+    var c = compute(), t = c.t, q = c.q, now = todayKey(), mes = monthName(thisMonth());
     var rows = c.rows.filter(function (r) { return r.counts; });
-    var est = q.pend > q.month && c.used - (q.pend - q.month) >= 0 ? c.used - (q.pend - q.month) : null;
     function kind(m) { return m.type === 'c' ? WHO[m.who] + (m.n > 1 ? ' · ' + m.n + ' cuotas' : '') : m.type === 'g' ? 'Cargo' : 'Abono'; }
     function owed(m) { return money(uses(m)); }
+    function cuotaLine(m) {
+      var st = cuotaState(m);
+      return m.n + ' cuotas de ' + money(cuotaVal(m)) + ' · este mes: ' + (st.now ? 'cuota ' + st.now + ', ' + money(st.nowAmt) : 'ninguna') +
+        ' · después: ' + (st.later ? st.later + ' ' + plural(st.later, 'cuota', 'cuotas') + ', ' + money(st.laterAmt) + ', hasta ' + monthName(st.end) : 'ninguna');
+    }
 
     var L = ['MASTER · Extracto de la tarjeta', 'Generado el ' + fmtFull(now) + ', ' + nowTime(), '',
       'Cupo: ' + money(cfg.limit), 'Utilizado: ' + money(c.used), 'Disponible: ' + money(c.avail), '',
@@ -1283,16 +1301,18 @@ svg { display: block; }
     if (!rows.length) L.push('Sin movimientos desde la deuda inicial.');
     rows.forEach(function (r, i) { var m = r.m; L.push((i + 1) + '. ' + fmtNum(m.date) + ' ' + m.time + ' · ' + m.desc + ' · ' + kind(m) + ' · ' + owed(m)); });
     L.push('', 'TOTALES',
+      'Deuda inicial: ' + money(cfg.debt),
       'Titular (' + t.nT + ' ' + plural(t.nT, 'compra', 'compras') + '): ' + money(t.T),
       'Adicional (' + t.nA + ' ' + plural(t.nA, 'compra', 'compras') + '): ' + money(t.A),
       'Cargos (' + t.ng + '): ' + money(t.g),
-      'Abonos (' + t.na + '): ' + money(-t.a), '',
-      'TOTAL A PAGAR: ' + money(c.used));
+      'Abonos (' + t.na + '): ' + money(-t.a),
+      'Utilizado: ' + money(c.used));
+    if (q.laterAmt > 0) L.push('Cuotas que vencen después de ' + mes + ' (' + q.laterN + '): ' + money(-q.laterAmt));
+    L.push('', 'TOTAL A PAGAR: ' + money(c.due));
     if (q.active.length) {
       L.push('', 'COMPRAS EN CUOTAS');
-      q.active.forEach(function (m) { L.push(m.desc + ' · ' + WHO[m.who] + ' · ' + m.paid + ' de ' + m.n + ' pagadas · cuota ' + money(cuotaVal(m)) + ' · por pagar ' + money(pendAmt(m))); });
-      L.push('Cuotas pendientes: ' + q.left + ' · ' + money(q.pend), 'Cuota de este mes: ' + money(q.month));
-      if (est !== null) L.push('Pago del mes estimado (total sin las cuotas futuras): ' + money(est));
+      q.active.forEach(function (m) { L.push(m.desc + ' · ' + WHO[m.who] + ' · ' + cuotaLine(m)); });
+      L.push('Cuotas de este mes, dentro del total a pagar: ' + money(q.nowAmt));
     }
 
     var h = '<dl class="ext-kv"><div><dt>Cupo</dt><dd>' + money(cfg.limit) + '</dd></div><div><dt>Utilizado</dt><dd>' + money(c.used) + '</dd></div><div><dt>Disponible</dt><dd>' + money(c.avail) + '</dd></div></dl>' +
@@ -1304,11 +1324,15 @@ svg { display: block; }
       '<div><dt>Titular · ' + t.nT + ' ' + plural(t.nT, 'compra', 'compras') + '</dt><dd>' + money(t.T) + '</dd></div>' +
       '<div><dt>Adicional · ' + t.nA + ' ' + plural(t.nA, 'compra', 'compras') + '</dt><dd>' + money(t.A) + '</dd></div>' +
       '<div><dt>Cargos · ' + t.ng + '</dt><dd>' + money(t.g) + '</dd></div>' +
-      '<div><dt>Abonos · ' + t.na + '</dt><dd class="in">' + money(-t.a) + '</dd></div></dl>' +
-      '<div class="ext-total"><span>Total a pagar</span><b>' + money(c.used) + '</b></div>';
+      '<div><dt>Abonos · ' + t.na + '</dt><dd class="in">' + money(-t.a) + '</dd></div>' +
+      '<div class="sum"><dt>Utilizado</dt><dd>' + money(c.used) + '</dd></div>' +
+      (q.laterAmt > 0 ? '<div><dt>Cuotas que vencen después · ' + q.laterN + '</dt><dd>' + money(-q.laterAmt) + '</dd></div>' : '') + '</dl>' +
+      '<div class="ext-total"><span>Total a pagar</span><b>' + money(c.due) + '</b></div>';
     if (q.active.length) {
-      h += '<p class="note">De ese total, <strong>' + money(q.pend) + '</strong> son cuotas pendientes (' + q.left + '). La cuota de este mes suma <strong>' + money(q.month) + '</strong>.' +
-        (est !== null ? ' Sin las cuotas futuras, el pago del mes sería de <strong>' + money(est) + '</strong> (estimado).' : '') + '</p>';
+      h += '<h3>Compras en cuotas</h3><ul class="ext-list">' +
+        q.active.map(function (m) { return '<li><b>' + esc(m.desc) + '</b><i>' + money(m.amount) + '</i><span>' + WHO[m.who] + ' · ' + cuotaLine(m) + '</span></li>'; }).join('') + '</ul>' +
+        '<p class="note">El total a pagar incluye <strong>' + money(q.nowAmt) + '</strong> en cuotas de ' + mes + '.' +
+        (q.laterAmt > 0 ? ' Quedan fuera <strong>' + money(q.laterAmt) + '</strong> en cuotas que vencen después: ocupan cupo, pero se pagan en sus meses.' : '') + '</p>';
     }
     return { html: h, text: L.join('\n') };
   }
@@ -1350,7 +1374,9 @@ svg { display: block; }
     if (m === 'extract' && !cfg.at) return;
     opts = opts || {};
     sheet = { mode: m, id: id || null, del: false, testing: false, text: '',
-      type: p ? p.type : opts.type || 'c', who: p && p.who ? p.who : 'T', n: opts.n || 1 };
+      type: p ? p.type : opts.type || 'c', who: p && p.who ? p.who : 'T', n: opts.n || 1,
+      // Mes de la cuota 1: el guardado o, mientras no se toque, el mes siguiente a la fecha de la compra
+      first: p && p.first ? p.first : addMonths((p ? p.date : todayKey()).slice(0, 7), 1), firstAuto: !(p && p.first) };
     renderSheet();
     sheetEl.hidden = false;
     document.documentElement.classList.add('lock');
@@ -1385,29 +1411,23 @@ svg { display: block; }
     if (date > today) { setErr('La fecha no puede ser futura.'); return; }
     if (!TIME_RE.test(time)) { setErr('Indica la hora, por ejemplo 13:04.'); return; }
     if (!desc && p && p.src === 'mail') { setErr('Escribe el nombre del comercio.'); return; }
-    var n = 1, paid = 0;
+    var n = 1;
     if (type === 'c') {
-      var rn = val('f-n').trim(), rp = val('f-paid').trim() || '0';
+      var rn = val('f-n').trim();
       if (!/^\d+$/.test(rn) || +rn < 1 || +rn > MAX_N) { setErr('Indica el número de cuotas, entre 1 y ' + MAX_N + '. Usa 1 si fue sin cuotas.'); return; }
       n = +rn;
-      if (n > 1) {
-        if (!/^\d+$/.test(rp) || +rp > n) { setErr('Las cuotas ya pagadas van de 0 a ' + n + '.'); return; }
-        paid = +rp;
-      }
+      if (n > 1 && sheet.first < date.slice(0, 7)) { setErr('La cuota 1 no puede pagarse antes del mes de la compra.'); return; }
     }
     var rec = { id: p ? p.id : genId(), type: type, date: date, time: time, desc: desc, amount: +raw, src: p ? p.src : 'manual', key: p ? p.key : '',
-      card: p ? p.card : '', who: type === 'c' ? sheet.who : '', n: n, paid: paid, ts: p ? p.ts : Date.now() };
-    var ups = [rec], month = document.getElementById('f-month'), bumped = 0;
-    if (!p && type === 'a' && month && month.checked) {
-      cuotasInfo().active.forEach(function (m) { ups.push(copyOf(m, { paid: m.paid + 1 })); bumped++; });
-    }
+      card: p ? p.card : '', who: type === 'c' ? sheet.who : '', n: n, first: n > 1 ? sheet.first : '', ts: p ? p.ts : Date.now() };
+    var ups = [rec];
     busy = true;
     var ok = await commit(ups, []);
     busy = false;
     if (!ok) return;
     closeSheet();
     if (p) toast('Cambios guardados');
-    else if (type === 'a') toast('Abono anotado · +$' + dots(rec.amount) + (bumped ? ' · ' + bumped + ' ' + plural(bumped, 'cuota marcada', 'cuotas marcadas') : ''));
+    else if (type === 'a') toast('Abono anotado · +$' + dots(rec.amount));
     else toast((type === 'g' ? 'Cargo anotado · −$' : n > 1 ? 'Compra en ' + n + ' cuotas anotada · −$' : 'Compra anotada · −$') + dots(rec.amount));
   }
 
@@ -1450,16 +1470,6 @@ svg { display: block; }
     }
   }
 
-  // Cuotas: marcar o desmarcar una cuota pagada. No toca el saldo.
-  async function setPaid(list, d, msg) {
-    if (busy || !list.length) return;
-    var before = list.map(function (m) { return copyOf(m); });
-    busy = true;
-    var ok = await commit(list.map(function (m) { return copyOf(m, { paid: Math.max(0, Math.min(m.n, m.paid + d)) }); }), []);
-    busy = false;
-    if (ok) toast(msg, 'Deshacer', function () { commit(before, []); }, 6000);
-  }
-
   sheetEl.addEventListener('click', async function (ev) {
     var b = ev.target.closest('[data-act]');
     if (!b || !sheet) return;
@@ -1494,7 +1504,6 @@ svg { display: block; }
       document.getElementById('f-desc-label').textContent = k.label;
       document.getElementById('f-save').textContent = k.save;
       document.getElementById('f-buy').hidden = t !== 'c';
-      document.getElementById('f-month-wrap').hidden = !(t === 'a' && cuotasInfo().active.length);
       if (d) d.placeholder = k.ph;
       if (dl) dl.innerHTML = descOptions(t).map(function (x) { return '<option value="' + esc(x) + '"></option>'; }).join('');
       return;
@@ -1507,9 +1516,13 @@ svg { display: block; }
     if (a === 'step') {
       var inp = document.getElementById(b.getAttribute('data-for'));
       if (!inp) return;
-      var isN = inp.id === 'f-n', max = isN ? MAX_N : Math.max(0, +val('f-n') || 0), min = isN ? 1 : 0;
-      inp.value = Math.max(min, Math.min(max, (parseInt(inp.value, 10) || 0) + (+b.getAttribute('data-d'))));
-      if (isN) { var pd = document.getElementById('f-paid'); if (pd && +pd.value > +inp.value) pd.value = inp.value; }
+      inp.value = Math.max(1, Math.min(MAX_N, (parseInt(inp.value, 10) || 0) + (+b.getAttribute('data-d'))));
+      cuotaPreview();
+      return;
+    }
+    if (a === 'month') {
+      sheet.first = addMonths(sheet.first, +b.getAttribute('data-d') < 0 ? -1 : 1);
+      sheet.firstAuto = false;
       cuotaPreview();
       return;
     }
@@ -1544,7 +1557,7 @@ svg { display: block; }
       if (t.id !== 'f-debt') d = d.replace(/^0+/, '');
       t.value = d ? dots(+d) : '';
       if (t.id === 'f-amount') cuotaPreview(); else setupPreview();
-    } else if (t.id === 'f-n' || t.id === 'f-paid') {
+    } else if (t.id === 'f-n') {
       t.value = t.value.replace(/\D/g, '').slice(0, 2);
       cuotaPreview();
     } else if (t.id === 'f-paste') {
@@ -1552,6 +1565,7 @@ svg { display: block; }
     } else if (t.id === 'f-date' || t.id === 'f-time') {
       var n = document.getElementById('f-note'), msg = sheet && sheet.mode !== 'setup' ? anchorNote(val('f-date'), val('f-time')) : '';
       if (n) { n.textContent = msg; n.hidden = !msg; }
+      if (t.id === 'f-date' && sheet && sheet.firstAuto && validDate(t.value)) { sheet.first = addMonths(t.value.slice(0, 7), 1); cuotaPreview(); }
     }
   });
 
@@ -1565,7 +1579,7 @@ svg { display: block; }
   app.addEventListener('click', function (ev) {
     var b = ev.target.closest('[data-act]');
     if (!b) return;
-    var a = b.getAttribute('data-act'), m = b.getAttribute('data-id') ? find(b.getAttribute('data-id')) : null;
+    var a = b.getAttribute('data-act');
     if (a === 'add') openSheet('add', null, { type: KIND[b.getAttribute('data-t')] ? b.getAttribute('data-t') : 'c' });
     else if (a === 'add-cuotas') openSheet('add', null, { type: 'c', n: 3 });
     else if (a === 'edit') openSheet('edit', b.getAttribute('data-id'));
@@ -1574,9 +1588,6 @@ svg { display: block; }
     else if (a === 'box') openSheet('box');
     else if (a === 'extract') openSheet('extract');
     else if (a === 'sync') syncBox(true);
-    else if (a === 'pay' && m && m.paid < m.n) setPaid([m], 1, 'Cuota ' + (m.paid + 1) + ' de ' + m.n + ' marcada como pagada');
-    else if (a === 'unpay' && m && m.paid > 0) setPaid([m], -1, 'Cuota ' + m.paid + ' de ' + m.n + ' desmarcada');
-    else if (a === 'pay-all') { var act = cuotasInfo().active; setPaid(act, 1, 'Una cuota marcada en ' + act.length + ' ' + plural(act.length, 'compra', 'compras')); }
     else if (a === 'order') { prefs.order = prefs.order === 'desc' ? 'asc' : 'desc'; savePrefs(); render(); }
     else if (a === 'filter') { filter = b.getAttribute('data-f'); shown = PAGE; render(); }
     else if (a === 'more') { shown += PAGE; render(); }
