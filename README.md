@@ -12,7 +12,7 @@ Es un registro personal. No es la app oficial del banco ni está conectada a la 
 - **Compra, cargo y abono a mano**: cada compra y cada cargo (−) restan del disponible; cada abono (+) suma. Sirve para los cobros de la tarjeta (comisiones, intereses, seguros) y para los pagos o devoluciones.
 - **Compras en cuotas**: se ingresan con el monto total, el número de cuotas y el mes en que se paga la cuota 1. Una sección aparte muestra cada compra con sus cuotas pagadas, la cuota de este mes y las que vencen después. Una compra leída de un aviso se convierte en compra en cuotas al tocarla e indicar sus cuotas.
 - **Totales por tarjeta**: cuánto suman las compras del Titular y del Adicional, más los cargos y los abonos.
-- **Extracto**: un botón genera el detalle de todos los movimientos desde la deuda inicial, con el utilizado, las cuotas que vencen después y el total a pagar. Se copia como texto o se comparte.
+- **Extracto**: un botón genera el detalle de todos los movimientos desde la deuda inicial, con el utilizado, las cuotas que vencen después y el total a pagar. Se copia como texto, se comparte o se exporta a Excel.
 - **Borrar un registro**: al tocar un movimiento se corrige o se elimina. Hay unos segundos para deshacer.
 - **Datos y respaldo**: copia todos los datos como texto y los restaura desde ahí.
 
@@ -28,6 +28,16 @@ Es un registro personal. No es la app oficial del banco ni está conectada a la 
 - Las cuotas no se marcan a mano y no cambian el saldo. El disponible sube cuando se anota el abono.
 - El valor de cada cuota es el total dividido en partes iguales, sin intereses. Si la compra tiene interés, conviene ingresar como monto total lo que se va a pagar en total.
 - Una compra en cuotas anterior a la deuda inicial se anota con su fecha real: queda como historial, no cambia el saldo y sus cuotas futuras igual se descuentan del total a pagar.
+
+## Exportar el extracto a Excel
+
+En el extracto, **Exportar a Excel** genera el archivo `Extracto Master aaaa-mm-dd.xlsx` con tres hojas:
+
+- **Resumen**: cupo, utilizado, disponible y total a pagar, más el detalle que lleva de la deuda inicial al total (compras del Titular y del Adicional, cargos, abonos y cuotas que vencen después).
+- **Movimientos**: una fila por movimiento, con número, fecha, hora, descripción, tipo, tarjeta, cuotas y monto. Los montos van como deuda (compras y cargos en positivo, abonos en negativo), así que la suma de la columna es el utilizado. Trae filtros y la primera fila fija.
+- **Cuotas**: una fila por compra en cuotas, con el valor de la cuota, el mes de la primera y de la última, las pagadas, la de este mes y las que vencen después. Solo aparece si hay compras en cuotas.
+
+En el iPhone el archivo se entrega por la hoja de compartir, para guardarlo en Archivos, abrirlo en Excel o Numbers, o enviarlo. En un computador se descarga. El archivo se arma en el dispositivo, sin conexión y sin enviar los datos a ningún servicio.
 
 ## Formato del aviso
 

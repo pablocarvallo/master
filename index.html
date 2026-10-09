@@ -496,6 +496,7 @@ svg { display: block; }
   var gotItems = false, gotCfg = false;
   var mode = 'local';
   var db = null;
+  var saver = null;                                  // dentro de Claude, la vía para entregar un archivo a quien usa la app
   var sheet = null;
   var busy = false;
   var restoreArmed = false;
@@ -1394,8 +1395,193 @@ svg { display: block; }
       '<p class="sub">Todos los movimientos desde la deuda inicial del ' + fmtFull(cfg.at.slice(0, 10)) + '. Generado el ' + fmtFull(todayKey()) + ', ' + nowTime() + '.</p>' +
       ex.html +
       '<div class="stack"><button type="button" class="btn primary block" data-act="ext-copy">Copiar extracto</button>' +
+      (!hasHost || saver ? '<button type="button" class="btn tonal block" data-act="ext-xlsx">Exportar a Excel</button>' : '') +
       (canShare ? '<button type="button" class="btn tonal block" data-act="ext-share">Compartir</button>' : '') +
       '<button type="button" class="btn ghost block" data-act="cancel">Cerrar</button></div></div>';
+  }
+
+  /* ---------- Exportar el extracto a Excel ---------- */
+  // Un .xlsx es un ZIP con unas pocas hojas en XML. Se arma aquí mismo, sin bibliotecas, para que también
+  // funcione sin conexión. Hojas: Resumen, Movimientos (una fila por movimiento, lista para filtrar) y Cuotas.
+  var XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  var XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  var NS_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  var NS_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  var NS_PKG = 'http://schemas.openxmlformats.org/package/2006/relationships';
+  var CT = 'application/vnd.openxmlformats-officedocument.spreadsheetml.';
+  var crcTable = null;
+  function crc32(u8) {
+    if (!crcTable) {
+      crcTable = [];
+      for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; crcTable[n] = c >>> 0; }
+    }
+    var crc = 0xFFFFFFFF;
+    for (var i = 0; i < u8.length; i++) crc = crcTable[(crc ^ u8[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+  // ZIP sin compresión: por cada archivo, cabecera local y datos; al final, el directorio central y el cierre
+  function zipStore(files) {
+    var enc = new TextEncoder(), parts = [], central = [], offset = 0, csize = 0, d = new Date();
+    var time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+    var date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+    function record(sig, size) { var v = new DataView(new ArrayBuffer(size)); v.setUint32(0, sig, true); return v; }
+    files.forEach(function (f) {
+      var name = enc.encode(f.name), data = enc.encode(f.text), crc = crc32(data);
+      var lh = record(0x04034b50, 30);
+      lh.setUint16(4, 20, true); lh.setUint16(10, time, true); lh.setUint16(12, date, true);
+      lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, name.length, true);
+      var ch = record(0x02014b50, 46);
+      ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(12, time, true); ch.setUint16(14, date, true);
+      ch.setUint32(16, crc, true); ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, name.length, true);
+      ch.setUint32(42, offset, true);
+      parts.push(lh.buffer, name, data); central.push(ch.buffer, name);
+      offset += 30 + name.length + data.length; csize += 46 + name.length;
+    });
+    var end = record(0x06054b50, 22);
+    end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, csize, true); end.setUint32(16, offset, true);
+    return new Blob(parts.concat(central, [end.buffer]), { type: XLSX_MIME });
+  }
+  function xesc(v) {
+    return String(v).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '').replace(/[<>&"]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]; });
+  }
+  function colName(i) { var out = ''; for (i += 1; i > 0; i = Math.floor((i - 1) / 26)) out = String.fromCharCode(65 + (i - 1) % 26) + out; return out; }
+  function excelDate(k) { return Date.UTC(+k.slice(0, 4), +k.slice(5, 7) - 1, +k.slice(8, 10)) / 86400000 + 25569; }
+  function excelTime(t) { return (+t.slice(0, 2) * 60 + +t.slice(3, 5)) / 1440; }
+
+  function buildXlsx() {
+    var c = compute(), t = c.t, q = c.q, mes = monthName(thisMonth()), at = cfg.at;
+    var H = 1, M = 2, MB = 3, D = 4, T = 5, TT = 6, B = 7;        // estilos: encabezado, monto, monto en negrita, fecha, hora, título, negrita
+    var strings = [], index = {}, refs = 0;
+    function sst(v) { refs++; if (!(('k' + v) in index)) { index['k' + v] = strings.length; strings.push(v); } return index['k' + v]; }
+    function h(v) { return { v: v, s: H }; }
+    function money$(v, bold) { return { v: v, s: bold ? MB : M }; }
+    // Una celda es un valor suelto o { v: valor, s: estilo }; los números van como número y lo demás como texto
+    function sheetXml(rows, widths, opts) {
+      opts = opts || {};
+      var x = XML_HEAD + '<worksheet xmlns="' + NS_MAIN + '">';
+      if (opts.freeze) x += '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>';
+      x += '<cols>' + widths.map(function (w, i) { return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>'; }).join('') + '</cols><sheetData>';
+      rows.forEach(function (row, r) {
+        var cells = '';
+        row.forEach(function (cell, i) {
+          if (cell == null || cell === '') return;
+          if (typeof cell !== 'object') cell = { v: cell };
+          var open = '<c r="' + colName(i) + (r + 1) + '"' + (cell.s ? ' s="' + cell.s + '"' : '');
+          cells += typeof cell.v === 'number' ? open + '><v>' + cell.v + '</v></c>' : open + ' t="s"><v>' + sst(String(cell.v)) + '</v></c>';
+        });
+        if (cells) x += '<row r="' + (r + 1) + '">' + cells + '</row>';
+      });
+      x += '</sheetData>';
+      if (opts.filter) x += '<autoFilter ref="' + opts.filter + '"/>';
+      return x + '</worksheet>';
+    }
+
+    var resumen = [
+      [{ v: 'Master · Extracto de la tarjeta de crédito', s: TT }],
+      ['Generado el ' + fmtFull(todayKey()) + ', ' + nowTime()],
+      ['Movimientos desde la deuda inicial del ' + fmtFull(at.slice(0, 10)) + ', ' + at.slice(11)],
+      [],
+      [h('Resumen'), h('Monto')],
+      ['Cupo', money$(cfg.limit)],
+      ['Utilizado', money$(c.used)],
+      ['Disponible', money$(c.avail)],
+      [{ v: 'Total a pagar', s: B }, money$(c.due, true)],
+      [],
+      [h('Detalle'), h('Monto'), h('Cantidad')],
+      ['Deuda inicial', money$(cfg.debt)],
+      ['Compras Titular', money$(t.T), t.nT],
+      ['Compras Adicional', money$(t.A), t.nA],
+      ['Cargos', money$(t.g), t.ng],
+      ['Abonos', money$(0 - t.a), t.na],
+      [{ v: 'Utilizado', s: B }, money$(c.used, true)],
+      ['Cuotas que vencen después de ' + mes, money$(0 - q.laterAmt), q.laterN],
+      [{ v: 'Total a pagar', s: B }, money$(c.due, true)],
+      [],
+      ['Cuotas de ' + mes + ', incluidas en el total a pagar', money$(q.nowAmt), q.nowN]
+    ];
+    // Movimientos: la deuda inicial y lo que cuenta desde ella, con los montos como deuda. La suma de «Monto» es el utilizado.
+    var mov = [[h('N°'), h('Fecha'), h('Hora'), h('Descripción'), h('Tipo'), h('Tarjeta'), h('Cuotas'), h('Monto')],
+      ['', { v: excelDate(at.slice(0, 10)), s: D }, { v: excelTime(at.slice(11)), s: T }, 'Deuda inicial', 'Deuda inicial', '', '', money$(cfg.debt)]];
+    c.rows.forEach(function (r) {
+      if (!r.counts) return;
+      var m = r.m, buy = m.type === 'c';
+      mov.push([mov.length - 1, { v: excelDate(m.date), s: D }, { v: excelTime(m.time), s: T }, m.desc,
+        buy ? 'Compra' : m.type === 'g' ? 'Cargo' : 'Abono', buy ? WHO[m.who] : '', buy ? m.n : '', money$(uses(m))]);
+    });
+    var cuo = [[h('Comercio'), h('Tarjeta'), h('Fecha de compra'), h('Monto total'), h('Cuotas'), h('Valor cuota'), h('Cuota 1 se paga en'), h('Última cuota'),
+      h('Pagadas'), h('Cuota de este mes'), h('Monto de este mes'), h('Cuotas después'), h('Monto después'), h('Estado')]];
+    q.active.concat(q.done).forEach(function (m) {
+      var st = cuotaState(m);
+      cuo.push([m.desc, WHO[m.who], { v: excelDate(m.date), s: D }, money$(m.amount), m.n, money$(cuotaVal(m)), monthName(m.first), monthName(st.end),
+        st.paid, st.now || '', money$(st.nowAmt), st.later, money$(st.laterAmt), st.paid >= m.n ? 'Terminada' : 'En curso']);
+    });
+
+    var movRef = 'A1:H' + mov.length;
+    var sheets = [
+      { name: 'Resumen', xml: sheetXml(resumen, [52, 16, 11]) },
+      { name: 'Movimientos', xml: sheetXml(mov, [6, 12, 8, 38, 14, 12, 8, 14], { freeze: true, filter: movRef }) }
+    ];
+    if (cuo.length > 1) sheets.push({ name: 'Cuotas', xml: sheetXml(cuo, [34, 11, 15, 14, 8, 13, 19, 16, 9, 17, 18, 15, 15, 11], { freeze: true }) });
+
+    var fmt$ = '&quot;$&quot;#,##0;\\-&quot;$&quot;#,##0';
+    var styles = XML_HEAD + '<styleSheet xmlns="' + NS_MAIN + '"><numFmts count="2"><numFmt numFmtId="164" formatCode="' + fmt$ + '"/><numFmt numFmtId="165" formatCode="hh:mm"/></numFmts>' +
+      '<fonts count="3"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="14"/><name val="Calibri"/><family val="2"/></font></fonts>' +
+      '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFECE6E1"/><bgColor indexed="64"/></patternFill></fill></fills>' +
+      '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+      '<cellXfs count="8"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+      '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>' +
+      '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
+      '<xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>' +
+      '<xf numFmtId="14" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
+      '<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+      '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>' +
+      '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+    var n = sheets.length;
+    var files = [
+      { name: '[Content_Types].xml', text: XML_HEAD + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>' +
+        '<Override PartName="/xl/workbook.xml" ContentType="' + CT + 'sheet.main+xml"/>' +
+        sheets.map(function (sh, i) { return '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="' + CT + 'worksheet+xml"/>'; }).join('') +
+        '<Override PartName="/xl/styles.xml" ContentType="' + CT + 'styles+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="' + CT + 'sharedStrings+xml"/></Types>' },
+      { name: '_rels/.rels', text: XML_HEAD + '<Relationships xmlns="' + NS_PKG + '"><Relationship Id="rId1" Type="' + NS_REL + '/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+      { name: 'xl/workbook.xml', text: XML_HEAD + '<workbook xmlns="' + NS_MAIN + '" xmlns:r="' + NS_REL + '"><bookViews><workbookView/></bookViews><sheets>' +
+        sheets.map(function (sh, i) { return '<sheet name="' + xesc(sh.name) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>'; }).join('') + '</sheets>' +
+        '<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="1" hidden="1">Movimientos!$A$1:$H$' + mov.length + '</definedName></definedNames></workbook>' },
+      { name: 'xl/_rels/workbook.xml.rels', text: XML_HEAD + '<Relationships xmlns="' + NS_PKG + '">' +
+        sheets.map(function (sh, i) { return '<Relationship Id="rId' + (i + 1) + '" Type="' + NS_REL + '/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>'; }).join('') +
+        '<Relationship Id="rId' + (n + 1) + '" Type="' + NS_REL + '/styles" Target="styles.xml"/><Relationship Id="rId' + (n + 2) + '" Type="' + NS_REL + '/sharedStrings" Target="sharedStrings.xml"/></Relationships>' }
+    ];
+    sheets.forEach(function (sh, i) { files.push({ name: 'xl/worksheets/sheet' + (i + 1) + '.xml', text: sh.xml }); });
+    files.push({ name: 'xl/styles.xml', text: styles });
+    files.push({ name: 'xl/sharedStrings.xml', text: XML_HEAD + '<sst xmlns="' + NS_MAIN + '" count="' + refs + '" uniqueCount="' + strings.length + '">' +
+      strings.map(function (v) { return '<si><t xml:space="preserve">' + xesc(v) + '</t></si>'; }).join('') + '</sst>' });
+    return zipStore(files);
+  }
+
+  // Entrega el archivo: en el teléfono, por la hoja de compartir (guardar en Archivos, abrir en Excel, enviar);
+  // en un computador, como descarga; dentro de Claude, a través de la app, que pide confirmación.
+  async function exportExcel() {
+    var blob, name = 'Extracto Master ' + todayKey() + '.xlsx';
+    try { blob = buildXlsx(); } catch (e) { toast('No se pudo generar el archivo de Excel.'); return; }
+    if (hasHost) {
+      if (!saver) { toast('Aquí no se puede guardar el archivo. Usa la app instalada desde GitHub.', null, null, 5200); return; }
+      try { await saver.save({ filename: name, data: blob }); toast('Extracto guardado en Excel'); }
+      catch (e) { if (!e || e.code !== 'declined') toast(e && e.code === 'rate_limited' ? 'Ya hay un archivo esperando tu confirmación.' : 'No se pudo guardar el archivo aquí.'); }
+      return;
+    }
+    var file = null;
+    try { file = new File([blob], name, { type: XLSX_MIME }); } catch (e) {}
+    if (file && navigator.maxTouchPoints > 0 && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; }   // la persona cerró la hoja de compartir
+    }
+    var url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = name; a.style.display = 'none';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+    toast('Extracto descargado: ' + name, null, null, 5200);
   }
 
   function renderSheet() {
@@ -1530,6 +1716,7 @@ svg { display: block; }
     if (a === 'copy-auth') { copyText('Bearer ' + prefs.token, 'Autorización copiada'); return; }
     if (a === 'copy-mails') { copyText(sheet.mails || '', 'Detalle copiado'); return; }
     if (a === 'ext-copy') { copyText(sheet.text, 'Extracto copiado'); return; }
+    if (a === 'ext-xlsx') { exportExcel(); return; }
     if (a === 'ext-share') {
       try { navigator.share({ title: 'Extracto Master', text: sheet.text }).catch(function () {}); } catch (e) { copyText(sheet.text, 'Extracto copiado'); }
       return;
@@ -1697,6 +1884,7 @@ svg { display: block; }
   async function connect() {
     try {
       if (!hasHost) return;
+      window.claude.use('downloads').then(function (d) { saver = d || null; }, function () {});
       db = await window.claude.use('db');
       if (!db) { fallback(); return; }
       mode = 'db';
