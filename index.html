@@ -461,6 +461,7 @@ svg { display: block; }
   var MAX_PAGES = 10;                  // hasta 1.000 avisos por lectura
   var SYNC_EVERY = 2 * 60 * 1000;      // al volver a la app, no releer el buzón antes de 2 minutos
   var SYNC_MARGIN = 15 * 60 * 1000;    // cada lectura repasa los últimos 15 minutos ya leídos
+  var READER = 2;                      // versión del lector de avisos: cuando cambia, el buzón se relee completo una vez
   // Si la app está en GitHub Pages, el buzón se sugiere en la misma cuenta
   var OWNER = /\.github\.io$/i.test(location.hostname) ? location.hostname.split('.')[0] : '';
   var DIG = {};
@@ -485,7 +486,7 @@ svg { display: block; }
   var items = [];                                              // movimientos, del más antiguo al más reciente
   var cfg = { debt: 0, at: '', limit: LIMIT, ignored: [] };    // deuda inicial, desde cuándo, cupo y avisos descartados
   // De este dispositivo: orden del listado, buzón (repositorio y token), última lectura y lo último que el buzón dejó fuera
-  var prefs = { order: 'desc', repo: '', token: '', last: 0, note: null, other: '' };
+  var prefs = { order: 'desc', repo: '', token: '', last: 0, note: null, other: '', reader: READER };
   var filter = 'all';                               // 'all' | 'T' titular | 'A' adicional | 'o' cargos y abonos
   var shown = PAGE;
   var fresh = {};                                   // movimientos recién traídos, para marcarlos como nuevos
@@ -560,19 +561,26 @@ svg { display: block; }
     if (/&[#a-z0-9]+;/i.test(s)) { var t = document.createElement('textarea'); t.innerHTML = s; s = t.value; }
     return s.replace(/[\s ​‌‍﻿]+/g, ' ');
   }
-  function parseMail(raw) {
-    var text = plainText(raw);
-    var re = /compra(?:\s+en\s+(?:(\d{1,2})\s+)?cuotas?)?\s+por\s+(US\$|USD|\$)?\s?([\d.]+(?:,\d{1,2})?)(?:\s+en\s+(\d{1,2})\s+cuotas?)?\s+con\s+(?:cargo\s+a\s+)?(.{1,60}?)\s+en\s+(.{1,80}?)\s+el\s+(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})/gi;
-    var out = { found: [], account: 0, foreign: 0, other: 0, otherCard: '' }, seen = {}, m;
+  // Busca en un texto todas las compras avisadas y decide de quién es cada una. Manda la terminación de la tarjeta:
+  // la palabra «Crédito» puede llegar con el acento dañado (CrÃ©dito, Cr?dito), según cómo Atajos lea el correo.
+  function scanMail(text) {
+    var re = /compra(?:\s+en\s+(?:(\d{1,2})\s+)?cuotas?)?\s+por\s+(US\$|USD|\$)?\s?([\d.]+(?:,\d{1,2})?)(?:\s+en\s+(\d{1,2})\s+cuotas?)?\s+con\s+(?:cargo\s+a\s+)?(.{1,60}?)\s+en\s+(.{1,80}?)\s+el\s+(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\s+a\s+las)?\s+(\d{1,2}):(\d{2})/gi;
+    var out = { found: [], skip: [], account: 0, foreign: 0, other: 0, otherCard: '' }, seen = {}, m;
     while ((m = re.exec(text))) {
-      var cur = (m[2] || '$').toUpperCase(), medio = m[5], merchant = clean(m[6]);
+      var cur = (m[2] || '$').toUpperCase(), medio = clean(m[5]), merchant = clean(m[6]);
       var amount = parseInt(m[3].replace(/\./g, '').replace(/,.*$/, ''), 10);
       var date = m[9] + '-' + pad(+m[8]) + '-' + pad(+m[7]), time = pad(+m[10]) + ':' + m[11];
       if (!validDate(date) || !TIME_RE.test(time) || !merchant || !(amount > 0) || amount > MAX_AMOUNT) continue;
-      if (!/cr[eé]dito/i.test(medio)) { out.account++; continue; }       // compra con cargo a la cuenta: es de FAN
-      if (cur !== '$') { out.foreign++; continue; }                      // en dólares: no usa el cupo en pesos
-      var card = (/(\d{4})\s*$/.exec(medio) || [])[1] || '';
-      if (!CARDS[card]) { out.other++; if (card) out.otherCard = card; continue; }
+      var card = (/(\d{4})\D{0,2}$/.exec(medio) || [])[1] || '';
+      var kind = /cuenta/i.test(medio) && !/tarjeta/i.test(medio) ? 'account'   // con cargo a la cuenta: es de FAN
+        : cur !== '$' ? 'foreign'                                                // en dólares: no usa el cupo en pesos
+        : CARDS[card] ? 'card' : 'other';                                        // otra tarjeta u otro medio de pago
+      if (kind !== 'card') {
+        out[kind]++;
+        if (kind === 'other' && card) out.otherCard = card;
+        out.skip.push({ kind: kind, merchant: merchant, medio: medio, card: card, money: (m[2] || '$') + m[3] });
+        continue;
+      }
       var key = date + 'T' + time + '|' + amount + '|' + merchant.toUpperCase() + '|' + card;
       if (seen[key]) continue;
       seen[key] = 1;
@@ -580,6 +588,45 @@ svg { display: block; }
       out.found.push({ date: date, time: time, amount: amount, merchant: merchant, card: card, who: CARDS[card], n: n >= 1 && n <= MAX_N ? n : 1, key: key });
     }
     return out;
+  }
+  // Bytes a texto: UTF-8 si es válido; si no, la codificación habitual de los correos en español
+  function bytesToText(bytes) {
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch (e) {}
+    try { return new TextDecoder('windows-1252').decode(bytes); } catch (e2) {}
+    var out = ''; for (var i = 0; i < bytes.length; i++) out += String.fromCharCode(bytes[i]); return out;
+  }
+  // Un correo puede llegar tal como viaja por la red: con «=C3=A9» y líneas cortadas con «=», o entero en base64
+  function unwrapMail(raw) {
+    var src = String(raw == null ? '' : raw), out = [];
+    if (/=\r?\n|=[0-9A-Fa-f]{2}/.test(src)) {
+      var q = src.replace(/=\r?\n/g, ''), enc = new TextEncoder(), parts = [], size = 0, last = 0, re = /(?:=[0-9A-Fa-f]{2})+/g, m;
+      while ((m = re.exec(q))) {
+        parts.push(enc.encode(q.slice(last, m.index)), Uint8Array.from(m[0].slice(1).split('='), function (h) { return parseInt(h, 16); }));
+        last = re.lastIndex;
+      }
+      parts.push(enc.encode(q.slice(last)));
+      parts.forEach(function (x) { size += x.length; });
+      var all = new Uint8Array(size), at = 0;
+      parts.forEach(function (x) { all.set(x, at); at += x.length; });
+      out.push(bytesToText(all));
+    }
+    var b = src.replace(/\s+/g, '');
+    if (b.length >= 80 && b.length % 4 === 0 && /^[A-Za-z0-9+\/]+={0,2}$/.test(b)) {
+      try { var bin = atob(b), arr = new Uint8Array(bin.length); for (var k = 0; k < bin.length; k++) arr[k] = bin.charCodeAt(k); out.push(bytesToText(arr)); } catch (e) {}
+    }
+    return out;
+  }
+  function parseMail(raw) {
+    // Primero el texto tal como llegó. Si trae líneas cortadas con «=», primero su versión decodificada,
+    // para no leer un comercio o una hora partidos por la mitad.
+    var texts = [String(raw == null ? '' : raw)], alt = unwrapMail(raw), first = null;
+    texts = /=\r?\n/.test(texts[0]) ? alt.concat(texts) : texts.concat(alt);
+    for (var i = 0; i < texts.length; i++) {
+      var out = scanMail(plainText(texts[i]));
+      if (out.found.length || out.skip.length) return out;
+      if (!first) first = out;
+    }
+    return first;
   }
 
   /* ---------- Datos ---------- */
@@ -689,7 +736,7 @@ svg { display: block; }
       prefs.token = typeof p.token === 'string' ? p.token.trim().slice(0, 300) : '';
       prefs.repo = prefs.token && REPO_RE.test(String(p.repo || '')) ? String(p.repo) : '';
       if (!prefs.repo) prefs.token = '';
-      prefs.last = prefs.repo && +p.last > 0 ? +p.last : 0;
+      prefs.last = prefs.repo && +p.last > 0 && p.reader === READER ? +p.last : 0;   // un lector nuevo repasa todo el buzón
       prefs.note = prefs.repo && p.note && typeof p.note.text === 'string' ? { text: p.note.text.slice(0, 600), at: +p.note.at || 0 } : null;
       prefs.other = prefs.repo && /^\d{4}$/.test(String(p.other || '')) ? String(p.other) : '';
     } catch (e) {}
@@ -859,11 +906,15 @@ svg { display: block; }
       var f = p.found[0], what = f.merchant + ' · ' + money(f.amount) + ' · ' + WHO[f.who];
       if (items.some(function (m) { return m.key === f.key; })) return { k: 'ok', label: 'Compra registrada', detail: what };
       if (cfg.ignored.indexOf(f.key) >= 0) return { k: 'skip', label: 'Compra que eliminaste', detail: what };
-      return { k: 'new', label: 'Compra sin registrar todavía', detail: what + '. Toca «Leer el buzón ahora».' };
+      return { k: 'new', label: 'Compra sin registrar todavía', detail: what + '. Toca «Leer el buzón ahora», más abajo.' };
     }
-    if (p.other) return { k: 'skip', label: 'Compra con otra tarjeta de crédito' + (p.otherCard ? ' (··' + p.otherCard + ')' : ''), detail: 'Aquí se registran ' + Object.keys(CARDS).map(function (d) { return '··' + d; }).join(' y ') + '.' };
-    if (p.foreign) return { k: 'skip', label: 'Compra en dólares', detail: 'No usa el cupo en pesos.' };
-    if (p.account) return { k: 'skip', acct: true, label: 'Compra con cargo a la cuenta', detail: 'La registra FAN, no esta app.' };
+    var sk = p.skip[0];
+    if (sk) {
+      var seen = sk.merchant + ' · ' + sk.money + ' · ' + sk.medio;
+      if (sk.kind === 'other') return { k: 'skip', label: 'Compra con otra tarjeta' + (sk.card ? ' (··' + sk.card + ')' : ''), detail: seen + '. Aquí se registran ' + Object.keys(CARDS).map(function (d) { return '··' + d; }).join(' y ') + '.' };
+      if (sk.kind === 'foreign') return { k: 'skip', label: 'Compra en dólares', detail: seen + '. No usa el cupo en pesos.' };
+      return { k: 'skip', acct: true, label: 'Compra con cargo a la cuenta', detail: seen + '. La registra FAN, no esta app.' };
+    }
     return { k: 'bad', label: 'No lo reconozco como aviso de compra', detail: '' };
   }
   async function loadMails() {
@@ -926,13 +977,13 @@ svg { display: block; }
     if (box.note && (!prefs.note || box.note.at >= prefs.note.at)) prefs.note = box.note;
     if (box.parsed.otherCard) prefs.other = box.parsed.otherCard;
   }
-  async function syncBox(manual) {
+  async function syncBox(manual, full) {
     if (!canSync || !prefs.repo || syncing || busy) return;
     syncing = true; syncErr = ''; lastTry = Date.now();
     render();
     var r = null, box = null, started = Date.now();
     try {
-      var msgs = await fetchBox(prefs.repo, prefs.token, prefs.last ? prefs.last - SYNC_MARGIN : 0);
+      var msgs = await fetchBox(prefs.repo, prefs.token, prefs.last && !full ? prefs.last - SYNC_MARGIN : 0);
       box = parseBox(msgs);
       r = await addParsed(box.parsed, 'box');
       if (r.ok) { prefs.last = started; keepBoxNotes(box); savePrefs(); }
@@ -1722,7 +1773,7 @@ svg { display: block; }
       return;
     }
     if (a === 'paste-add') { importPaste(); return; }
-    if (a === 'sync-now') { closeSheet(); syncBox(true); return; }
+    if (a === 'sync-now') { closeSheet(); syncBox(true, true); return; }   // desde aquí se repasa el buzón completo
     if (a === 'disconnect') {
       if (!sheet.del) { sheet.del = true; b.textContent = 'Toca de nuevo para desconectar'; b.classList.add('armed'); return; }
       prefs.repo = ''; prefs.token = ''; prefs.last = 0; prefs.note = null; prefs.other = ''; syncErr = ''; savePrefs();

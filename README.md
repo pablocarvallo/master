@@ -45,11 +45,15 @@ El lector reconoce el aviso de compra con tarjeta de crédito del Banco de Chile
 
 > Te informamos que se ha realizado una compra por $7.930 con Tarjeta de Crédito ****4526 en RedGloba*SU CASERO el 30/07/2026 09:34. Revisa Saldos y Movimientos en App Mi Banco o Banco en Línea.
 
-De cada aviso toma el monto, la tarjeta, el comercio, la fecha y la hora. Funciona con el texto plano o con el correo en HTML. Deja fuera:
+De cada aviso toma el monto, la tarjeta, el comercio, la fecha y la hora. Funciona con el texto plano o con el correo en HTML, y también si el correo llega codificado (con `=C3=A9` y líneas cortadas con `=`, o en base64).
+
+La compra se reconoce como de la tarjeta por su **terminación** (`9908` o `4526`), no por la palabra «Crédito»: según cómo Atajos lea el correo, esa palabra puede llegar con el acento dañado (`CrÃ©dito`, `Cr?dito`).
+
+Deja fuera:
 
 - las compras con cargo a la cuenta (esas las registra FAN);
 - las compras en dólares, porque no usan el cupo en pesos;
-- las compras con una tarjeta de crédito que no termine en `9908` ni en `4526`.
+- las compras con otra tarjeta u otro medio de pago, es decir, cuya terminación no sea `9908` ni `4526`.
 
 Si el banco reemplaza una tarjeta y cambia su terminación, se agrega la nueva en la tabla `CARDS`, al comienzo del código de `index.html`.
 
@@ -118,6 +122,8 @@ La única condición es que la automatización filtre **solo por remitente**. Si
 4. Mientras tanto, la compra se puede agregar con **Pegar un aviso**.
 
 El botón **Copiar este detalle** copia la lista con el texto de cada correo, para revisar un aviso que la app no reconoce.
+
+**Leer el buzón ahora**, en esa misma hoja, repasa el buzón completo y no solo los correos nuevos. Cuando la app se actualiza con un lector de avisos nuevo, también lo repasa completo una vez al abrirse, para recuperar compras que el lector anterior no reconoció.
 
 ## Instalar en el iPhone
 
