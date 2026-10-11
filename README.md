@@ -14,6 +14,7 @@ Es un registro personal. No es la app oficial del banco ni está conectada a la 
 - **Totales por tarjeta**: cuánto suman las compras del Titular y del Adicional, más los cargos y los abonos.
 - **Extracto**: un botón genera el detalle de todos los movimientos desde la deuda inicial, con el utilizado, las cuotas que vencen después y el total a pagar. Se copia como texto, se comparte o se exporta a Excel.
 - **Borrar un registro**: al tocar un movimiento se corrige o se elimina. Hay unos segundos para deshacer.
+- **Widget en la pantalla de inicio**: muestra el total a pagar de este mes y las tres últimas compras, sin abrir la app.
 - **Datos y respaldo**: copia todos los datos como texto y los restaura desde ahí.
 
 ## Cómo se calcula
@@ -48,6 +49,8 @@ El lector reconoce el aviso de compra con tarjeta de crédito del Banco de Chile
 De cada aviso toma el monto, la tarjeta, el comercio, la fecha y la hora. Funciona con el texto plano o con el correo en HTML, y también si el correo llega codificado (con `=C3=A9` y líneas cortadas con `=`, o en base64).
 
 La compra se reconoce como de la tarjeta por su **terminación** (`9908` o `4526`), no por la palabra «Crédito»: según cómo Atajos lea el correo, esa palabra puede llegar con el acento dañado (`CrÃ©dito`, `Cr?dito`).
+
+Antes de leer el aviso, el lector repara el texto mal decodificado (`Ã©` vuelve a ser `é`, y `Â` seguido de un espacio duro vuelve a ser un espacio) y tolera signos sueltos entre las palabras. Un mismo aviso no se registra dos veces aunque llegue una vez con el texto dañado y otra bien, porque las compras se comparan sin signos ni acentos en el comercio.
 
 Deja fuera:
 
@@ -125,6 +128,27 @@ El botón **Copiar este detalle** copia la lista con el texto de cada correo, pa
 
 **Leer el buzón ahora**, en esa misma hoja, repasa el buzón completo y no solo los correos nuevos. Cuando la app se actualiza con un lector de avisos nuevo, también lo repasa completo una vez al abrirse, para recuperar compras que el lector anterior no reconoció.
 
+## Widget en la pantalla de inicio
+
+Muestra el total a pagar de este mes y las tres últimas compras, cada una con una **T** (Titular) o una **A** (Adicional). Una app web no puede crear widgets en iPhone, así que el widget se hace con **Scriptable**, una app gratuita que dibuja widgets a partir de un script.
+
+1. Instala **Scriptable** desde el App Store.
+2. En Master, entra a **Buzón y atajo → Widget en la pantalla de inicio** y toca **Copiar el script del widget**. El script va completo, con el buzón y el token.
+3. Abre Scriptable, toca **+** y pega el script. Nómbralo **Master** y ejecútalo con **▶**: debe mostrar el total a pagar.
+4. En la pantalla de inicio, mantén presionado un espacio vacío, toca **Editar → Agregar widget**, busca **Scriptable** y elige el tamaño mediano.
+5. Mantén presionado el widget nuevo, toca **Editar widget** y en **Script** elige **Master**.
+
+Cómo funciona:
+
+- Al activarlo, Master publica el utilizado, las compras en cuotas y las últimas compras en un hito (*milestone*) del repositorio privado del buzón, llamado «Master · widget». El script los lee y les suma las compras con la tarjeta que llegaron al buzón después, así el widget se pone al día aunque no abras Master.
+- El total a pagar se calcula igual que en la app: el utilizado menos las cuotas que vencen después de este mes. El script lo recalcula con la fecha del teléfono, de modo que al cambiar el mes entran solas las cuotas que corresponden.
+- iOS decide cada cuánto actualiza el widget, normalmente cada varios minutos. No es instantáneo.
+- Los cargos, los abonos, los ajustes de la deuda y las compras anotadas a mano solo existen dentro de Master: el widget los refleja después de abrir la app.
+- Al tocar el widget se abre Scriptable, no Master: iOS no permite abrir una app web instalada desde un widget.
+- También sirve en tamaño pequeño y en la pantalla bloqueada (rectangular).
+- El widget de Master y el de FAN conviven: usan el mismo buzón, pero cada uno tiene su propio script y su propio hito.
+- **Desactivar el widget**, en la misma sección de Master, deja de publicar y borra lo publicado.
+
 ## Instalar en el iPhone
 
 1. En GitHub, ve a **Settings → Pages** y publica la rama `main` desde la raíz (`/`). La app queda en `https://pablocarvallo.github.io/master/`.
@@ -140,6 +164,7 @@ Se abre como app independiente, con su icono, y funciona sin conexión.
 | `index.html` | La app completa (HTML, CSS y JavaScript sin dependencias de compilación) |
 | `manifest.webmanifest` | Nombre, colores e iconos de la app instalada |
 | `sw.js` | Service worker para uso sin conexión |
+| `widget/master-widget.js` | Script del widget para la app Scriptable. Master lo entrega completo con el botón de copiar; `index.html` lleva una copia idéntica entre las marcas `WIDGET:START` y `WIDGET:END`, que hay que renovar si el script cambia |
 | `icons/icon-full.svg` | Icono original a pantalla completa (fuente de los PNG) |
 | `icons/icon.svg` | Icono con esquinas redondeadas (favicon) |
 | `icons/apple-touch-icon.png` | Icono de 180 px para la pantalla de inicio del iPhone |
@@ -151,7 +176,7 @@ Los movimientos y la deuda quedan en el `localStorage` del navegador, en el disp
 
 - `master-movimientos`: cada movimiento con tipo (`c` compra, `g` cargo, `a` abono), fecha (`date`), hora (`time`), descripción (`desc`), monto en pesos (`amount`), origen (`mail` o `manual`), tarjeta (`who`: `T` titular o `A` adicional; `card`: los cuatro dígitos del aviso), número de cuotas (`n`), mes en que se paga la cuota 1 (`first`, como `aaaa-mm`) y, en las compras leídas de un aviso, la clave que evita duplicados (`key`).
 - `master-tarjeta`: la deuda inicial (`debt`), desde cuándo rige (`at`), el cupo (`limit`) y los avisos eliminados a propósito (`ignored`).
-- `master-preferencias`: orden del listado, repositorio y token del buzón, y momento de la última lectura.
+- `master-preferencias`: orden del listado, repositorio y token del buzón, momento de la última lectura y si el widget está activado.
 
 ## Icono
 

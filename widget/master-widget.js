@@ -1,0 +1,254 @@
+// Variables used by Scriptable.
+// These must be at the very top of the file. Do not edit.
+// icon-color: orange; icon-glyph: credit-card;
+
+// Master · widget para la pantalla de inicio del iPhone (app Scriptable)
+//
+// Muestra el total a pagar de este mes y las tres últimas compras con la tarjeta. Parte de lo que Master publica
+// en el buzón (el repositorio privado de GitHub) y le suma las compras que llegaron después, aunque no hayas
+// abierto Master. No copies este archivo a mano: usa el botón «Copiar el script del widget» de Master, que
+// completa las dos líneas siguientes con tu repositorio y tu token.
+const REPO = '__REPO__';
+const TOKEN = '__TOKEN__';
+
+const API = 'https://api.github.com/repos/' + REPO;
+const MS_TITLE = 'Master · widget';
+const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const MESL = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+/* ---------- Formatos y fechas ---------- */
+function pad(n) { return (n < 10 ? '0' : '') + n; }
+function dayKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function dots(n) { return String(Math.round(Math.abs(n))).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+function money(n) { return (n < 0 ? '−' : '') + '$' + dots(n); }
+function hm(d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+function dayLabel(k) {
+  const t = new Date(), y = new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1);
+  if (k === dayKey(t)) return 'hoy';
+  if (k === dayKey(y)) return 'ayer';
+  const p = k.split('-');
+  return (+p[2]) + ' ' + MES[+p[1] - 1];
+}
+function validDate(k) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return false;
+  const p = k.split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+  return d.getUTCFullYear() === +p[0] && d.getUTCMonth() === +p[1] - 1 && d.getUTCDate() === +p[2];
+}
+// Meses como 'aaaa-mm'
+function thisMonth() { return dayKey(new Date()).slice(0, 7); }
+function addMonths(k, d) { const t = +k.slice(0, 4) * 12 + (+k.slice(5, 7) - 1) + d; return Math.floor(t / 12) + '-' + pad(t % 12 + 1); }
+function monthsFrom(a, b) { return (+b.slice(0, 4) - +a.slice(0, 4)) * 12 + (+b.slice(5, 7) - +a.slice(5, 7)); }
+
+/* ---------- Lector de los avisos del banco (el mismo de Master) ---------- */
+const CP1252 = { 0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84, 0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02c6: 0x88, 0x2030: 0x89, 0x0160: 0x8a,
+  0x2039: 0x8b, 0x0152: 0x8c, 0x017d: 0x8e, 0x2018: 0x91, 0x2019: 0x92, 0x201c: 0x93, 0x201d: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97, 0x02dc: 0x98,
+  0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b, 0x0153: 0x9c, 0x017e: 0x9e, 0x0178: 0x9f };
+function contByte(ch) { let c = ch.charCodeAt(0); if (c > 0xff) c = CP1252[c] || 0; return c >= 0x80 && c <= 0xbf ? c : -1; }
+function demojibake(s) {
+  if (!/[ÂÃâ]/.test(s)) return s;
+  return s.replace(/[ÂÃ][^\x00-\x7f]|â[^\x00-\x7f]{2}/g, function (seq) {
+    const b1 = contByte(seq.charAt(1)), b2 = seq.length > 2 ? contByte(seq.charAt(2)) : 0;
+    if (b1 < 0 || b2 < 0) return seq;
+    return String.fromCharCode(seq.length > 2 ? (0x2 << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f) : ((seq.charCodeAt(0) & 0x1f) << 6) | (b1 & 0x3f));
+  });
+}
+const ENT = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", dollar: '$', aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú',
+  Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú', ntilde: 'ñ', Ntilde: 'Ñ', uuml: 'ü', Uuml: 'Ü', iexcl: '¡', iquest: '¿', ordf: 'ª', ordm: 'º',
+  deg: '°', middot: '·', laquo: '«', raquo: '»', ndash: '–', mdash: '—', hellip: '…', copy: '©', reg: '®' };
+function plainText(s) {
+  s = String(s == null ? '' : s);
+  if (s.length > 400000) s = s.slice(-400000);
+  s = demojibake(s);
+  if (s.normalize) s = s.normalize('NFC');
+  if (/<[a-z!\/][^>]*>/i.test(s)) s = s.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ');
+  s = s.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, function (all, e) {
+    if (e.charAt(0) === '#') {
+      const c = e.charAt(1).toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+      return c > 0 && c < 0x10000 ? String.fromCharCode(c) : ' ';
+    }
+    return Object.prototype.hasOwnProperty.call(ENT, e) ? ENT[e] : all;
+  });
+  return s.replace(/[\s\xa0\u200b-\u200d\ufeff]+/g, ' ');
+}
+function clean(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, 60); }
+function skel(key) {
+  const p = String(key).split('|');
+  return p[0] + '|' + (p[1] || '') + '|' + p.slice(2).join('').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+// Devuelve las compras con la tarjeta que trae un texto. Manda la terminación de la tarjeta; quedan fuera las
+// compras con cargo a la cuenta (las registra FAN), las que son en dólares y las de otra tarjeta.
+function parseMail(raw, cards) {
+  const text = plainText(raw);
+  const re = /compra(?:\W{1,4}en\W{1,4}(?:(\d{1,2})\W{1,4})?cuotas?)?\W{1,4}por\W{1,4}?(US\$|USD|\$)?\W{0,3}?([\d.]+(?:,\d{1,2})?)(?:\W{1,4}en\W{1,4}(\d{1,2})\W{1,4}cuotas?)?\W{1,4}con\W{1,4}(?:cargo\W{1,4}a\W{1,4})?(.{1,60}?)\s+en\s+(.{1,80}?)\s+el\s+(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\W{1,4}a\W{1,4}las)?\W{1,4}(\d{1,2}):(\d{2})/gi;
+  const out = [];
+  let m;
+  while ((m = re.exec(text))) {
+    const cur = (m[2] || '$').toUpperCase(), medio = clean(m[5]), merchant = clean(m[6]);
+    const amount = parseInt(m[3].replace(/\./g, '').replace(/,.*$/, ''), 10);
+    const date = m[9] + '-' + pad(+m[8]) + '-' + pad(+m[7]), time = pad(+m[10]) + ':' + m[11];
+    if (!validDate(date) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time) || !merchant || !(amount > 0)) continue;
+    const card = (/(\d{4})\D{0,2}$/.exec(medio) || [])[1] || '';
+    if ((/cuenta/i.test(medio) && !/tarjeta/i.test(medio)) || cur !== '$' || !cards[card]) continue;
+    const n = +(m[1] || m[4] || 1);
+    out.push({ d: date, h: time, c: merchant, m: amount, w: cards[card], n: n >= 1 && n <= 60 ? n : 1,
+      key: date + 'T' + time + '|' + amount + '|' + merchant.toUpperCase() + '|' + card });
+  }
+  return out;
+}
+
+/* ---------- Cuotas (igual que en Master) ---------- */
+// De una compra en cuotas { a: monto total, n: cuotas, f: mes de la cuota 1 }, lo que vence después del mes dado.
+// Esas cuotas ocupan cupo, pero todavía no entran en el total a pagar.
+function laterAmt(q, month) {
+  const i = monthsFrom(q.f, month), paid = Math.max(0, Math.min(q.n, i)), now = i >= 0 && i < q.n ? i + 1 : 0;
+  const v = Math.floor(q.a / q.n), paidAmt = paid >= q.n ? q.a : paid * v;
+  const nowAmt = now ? (now === q.n ? q.a - v * (q.n - 1) : v) : 0;
+  return q.a - paidAmt - nowAmt;
+}
+
+/* ---------- Datos ---------- */
+async function gh(path) {
+  const r = new Request(API + path);
+  r.headers = { Authorization: 'Bearer ' + TOKEN, Accept: 'application/vnd.github+json' };
+  r.timeoutInterval = 20;
+  const data = await r.loadJSON();
+  const code = r.response && r.response.statusCode;
+  if (code && code >= 400) { const e = new Error('GitHub ' + code); e.status = code; throw e; }
+  return data;
+}
+function cachePath() { const fm = FileManager.local(); return fm.joinPath(fm.documentsDirectory(), 'master-widget.json'); }
+function readCache() {
+  try { const fm = FileManager.local(), p = cachePath(); return fm.fileExists(p) ? JSON.parse(fm.readString(p)) : null; } catch (e) { return null; }
+}
+function writeCache(res) { try { FileManager.local().writeString(cachePath(), JSON.stringify(res)); } catch (e) {} }
+
+// Lo publicado por Master + las compras que llegaron al buzón después de la última vez que Master lo leyó
+async function load() {
+  const list = await gh('/milestones?state=all&per_page=100');
+  const ms = (Array.isArray(list) ? list : []).filter(function (x) { return x && x.title === MS_TITLE; })[0];
+  let st = null;
+  try { st = ms && ms.description ? JSON.parse(ms.description) : null; } catch (e) { st = null; }
+  if (!st || st.app !== 'master') return { msg: 'Abre Master y activa el widget en «Buzón y atajo».' };
+  if (typeof st.used !== 'number') return { msg: 'Abre Master e ingresa la deuda pendiente.' };
+
+  const known = {}, nuevas = [];
+  (st.keys || []).forEach(function (k) { known[k] = 1; });
+  const cards = st.cards && typeof st.cards === 'object' ? st.cards : {};
+  if (st.read > 0) {   // sin una lectura previa de Master no hay desde dónde contar lo nuevo
+    const since = '&since=' + encodeURIComponent(new Date(st.read - 30 * 60000).toISOString().replace(/\.\d+Z$/, 'Z'));
+    for (let page = 1; page <= 3; page++) {
+      const issues = await gh('/issues?state=all&sort=created&direction=asc&per_page=100&page=' + page + since);
+      if (!Array.isArray(issues)) break;
+      issues.forEach(function (it) {
+        if (!it || it.pull_request) return;
+        const title = String(it.title || '');
+        parseMail((title.length > 20 ? title + '\n' : '') + String(it.body || ''), cards).forEach(function (f) {
+          const sk = skel(f.key);
+          if (known[sk]) return;
+          known[sk] = 1;
+          if (st.at && f.d + 'T' + f.h < st.at) return;           // anterior a la deuda inicial: ya está dentro de ella
+          nuevas.push(f);
+        });
+      });
+      if (issues.length < 100) break;
+    }
+  }
+  let used = st.used;
+  const cuotas = (st.cuotas || []).filter(function (q) { return q && q.a > 0 && q.n > 1 && /^\d{4}-\d{2}$/.test(String(q.f)); });
+  nuevas.forEach(function (f) {
+    used += f.m;
+    if (f.n > 1) cuotas.push({ a: f.m, n: f.n, f: addMonths(f.d.slice(0, 7), 1) });   // la cuota 1, el mes siguiente a la compra
+  });
+  const month = thisMonth();
+  let later = 0;
+  cuotas.forEach(function (q) { later += laterAmt(q, month); });
+  const buys = (st.ult || []).concat(nuevas).filter(function (b) { return b && b.d && b.m > 0; })
+    .sort(function (a, b) { return (a.d + 'T' + a.h) < (b.d + 'T' + b.h) ? 1 : -1; }).slice(0, 3)
+    .map(function (b) { return { d: b.d, h: b.h, c: String(b.c || 'Compra'), m: b.m, w: b.w === 'A' ? 'A' : 'T' }; });
+  return { due: Math.max(0, used - later), used: used, later: later, month: month, buys: buys, nuevas: nuevas.length, at: Date.now() };
+}
+
+/* ---------- Dibujo ---------- */
+const WHITE = new Color('#ffffff'), AMBER = new Color('#ffb65c'), TIT = new Color('#ff8a4c'), ADI = new Color('#6fbdf0');
+function label(stack, str, size, color, opacity, bold) {
+  const t = stack.addText(str);
+  t.font = bold ? Font.boldSystemFont(size) : Font.systemFont(size);
+  t.textColor = color || WHITE;
+  if (opacity) t.textOpacity = opacity;
+  t.lineLimit = 1;
+  return t;
+}
+function build(res, family) {
+  const w = new ListWidget();
+  const lock = String(family || '').indexOf('accessory') === 0;
+  const small = family === 'small';
+  if (lock) {
+    // Pantalla bloqueada: total a pagar y última compra
+    label(w, 'Master ' + (res.msg ? '' : money(res.due)), 14, null, 0, true).minimumScaleFactor = 0.6;
+    if (res.msg) label(w, res.msg, 11).lineLimit = 2;
+    else if (res.buys.length) label(w, res.buys[0].c + ' ' + money(res.buys[0].m), 11).minimumScaleFactor = 0.7;
+    return w;
+  }
+  const g = new LinearGradient();
+  g.colors = [new Color('#40362f'), new Color('#14110f')];
+  g.locations = [0, 1];
+  g.startPoint = new Point(0, 0);
+  g.endPoint = new Point(1, 1);
+  w.backgroundGradient = g;
+  w.setPadding(small ? 12 : 14, small ? 12 : 16, small ? 10 : 12, small ? 12 : 16);
+
+  const head = w.addStack();
+  head.layoutHorizontally();
+  head.centerAlignContent();
+  const mes = res.month ? MESL[+res.month.slice(5, 7) - 1].toUpperCase() : '';
+  label(head, small || !mes ? 'A PAGAR' : 'A PAGAR EN ' + mes, small ? 9 : 10, AMBER, 0, true);
+  head.addSpacer();
+  if (res.at) label(head, (res.old ? 'sin conexión · ' : '') + hm(new Date(res.at)), 9, WHITE, 0.6);
+  w.addSpacer(2);
+
+  if (res.msg) {
+    const t = label(w, res.msg, small ? 12 : 14, WHITE, 0.9);
+    t.lineLimit = 4;
+    w.addSpacer();
+    return w;
+  }
+  const total = label(w, money(res.due), small ? 22 : 28, WHITE, 0, true);
+  total.minimumScaleFactor = 0.5;
+  w.addSpacer(small ? 4 : 8);
+
+  if (!res.buys.length) label(w, 'Aún no hay compras', 12, WHITE, 0.7);
+  res.buys.forEach(function (b, i) {
+    if (i) w.addSpacer(small ? 2 : 4);
+    const row = w.addStack();
+    row.layoutHorizontally();
+    row.centerAlignContent();
+    if (!small) { label(row, dayLabel(b.d) + ' ' + b.h, 10, WHITE, 0.6); row.addSpacer(6); }
+    label(row, b.w, small ? 9 : 10, b.w === 'A' ? ADI : TIT, 0, true);       // T: titular · A: adicional
+    row.addSpacer(4);
+    label(row, b.c, small ? 10 : 12, WHITE, 0.95);
+    row.addSpacer();
+    label(row, money(b.m), small ? 10 : 12, WHITE, 0, true);
+  });
+  w.addSpacer();
+  return w;
+}
+
+/* ---------- Ejecución ---------- */
+let res;
+if (/^__/.test(TOKEN) || /^__/.test(REPO)) {
+  res = { msg: 'Copia este script desde Master, con el botón «Copiar el script del widget».' };
+} else {
+  try {
+    res = await load();
+    if (!res.msg) writeCache(res);
+  } catch (e) {
+    const c = readCache();
+    if (c && !c.msg) { res = c; res.old = true; }
+    else res = { msg: e && e.status === 401 ? 'El token venció. Copia de nuevo el script desde Master.' : 'No se pudo leer el buzón. Revisa la conexión.' };
+  }
+}
+const widget = build(res, config.widgetFamily);
+widget.refreshAfterDate = new Date(Date.now() + 10 * 60 * 1000);
+if (config.runsInWidget) Script.setWidget(widget);
+else await widget.presentMedium();
+Script.complete();

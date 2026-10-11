@@ -296,6 +296,7 @@ svg { display: block; }
 .fold summary { min-height: 48px; display: flex; align-items: center; font-weight: 600; cursor: pointer; }
 .fold[open] { padding-bottom: 14px; }
 .fold > *:not(summary) { margin-top: 4px; }
+.fold > .guide, .fold > .note { margin-top: 12px; }
 
 /* Listado */
 .chips { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -461,7 +462,10 @@ svg { display: block; }
   var MAX_PAGES = 10;                  // hasta 1.000 avisos por lectura
   var SYNC_EVERY = 2 * 60 * 1000;      // al volver a la app, no releer el buzón antes de 2 minutos
   var SYNC_MARGIN = 15 * 60 * 1000;    // cada lectura repasa los últimos 15 minutos ya leídos
-  var READER = 2;                      // versión del lector de avisos: cuando cambia, el buzón se relee completo una vez
+  var READER = 3;                      // versión del lector de avisos: cuando cambia, el buzón se relee completo una vez
+  var WIDGET_TITLE = 'Master · widget';   // hito del buzón donde se publica el estado para el widget
+  // Script del widget para la app Scriptable (el mismo de widget/master-widget.js); al copiarlo se completa con el buzón y el token
+  var WIDGET_CODE = /*WIDGET:START*/"// Variables used by Scriptable.\n// These must be at the very top of the file. Do not edit.\n// icon-color: orange; icon-glyph: credit-card;\n\n// Master · widget para la pantalla de inicio del iPhone (app Scriptable)\n//\n// Muestra el total a pagar de este mes y las tres últimas compras con la tarjeta. Parte de lo que Master publica\n// en el buzón (el repositorio privado de GitHub) y le suma las compras que llegaron después, aunque no hayas\n// abierto Master. No copies este archivo a mano: usa el botón «Copiar el script del widget» de Master, que\n// completa las dos líneas siguientes con tu repositorio y tu token.\nconst REPO = '__REPO__';\nconst TOKEN = '__TOKEN__';\n\nconst API = 'https://api.github.com/repos/' + REPO;\nconst MS_TITLE = 'Master · widget';\nconst MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];\nconst MESL = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];\n\n/* ---------- Formatos y fechas ---------- */\nfunction pad(n) { return (n < 10 ? '0' : '') + n; }\nfunction dayKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }\nfunction dots(n) { return String(Math.round(Math.abs(n))).replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.'); }\nfunction money(n) { return (n < 0 ? '−' : '') + '$' + dots(n); }\nfunction hm(d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()); }\nfunction dayLabel(k) {\n  const t = new Date(), y = new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1);\n  if (k === dayKey(t)) return 'hoy';\n  if (k === dayKey(y)) return 'ayer';\n  const p = k.split('-');\n  return (+p[2]) + ' ' + MES[+p[1] - 1];\n}\nfunction validDate(k) {\n  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(k)) return false;\n  const p = k.split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));\n  return d.getUTCFullYear() === +p[0] && d.getUTCMonth() === +p[1] - 1 && d.getUTCDate() === +p[2];\n}\n// Meses como 'aaaa-mm'\nfunction thisMonth() { return dayKey(new Date()).slice(0, 7); }\nfunction addMonths(k, d) { const t = +k.slice(0, 4) * 12 + (+k.slice(5, 7) - 1) + d; return Math.floor(t / 12) + '-' + pad(t % 12 + 1); }\nfunction monthsFrom(a, b) { return (+b.slice(0, 4) - +a.slice(0, 4)) * 12 + (+b.slice(5, 7) - +a.slice(5, 7)); }\n\n/* ---------- Lector de los avisos del banco (el mismo de Master) ---------- */\nconst CP1252 = { 0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84, 0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02c6: 0x88, 0x2030: 0x89, 0x0160: 0x8a,\n  0x2039: 0x8b, 0x0152: 0x8c, 0x017d: 0x8e, 0x2018: 0x91, 0x2019: 0x92, 0x201c: 0x93, 0x201d: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97, 0x02dc: 0x98,\n  0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b, 0x0153: 0x9c, 0x017e: 0x9e, 0x0178: 0x9f };\nfunction contByte(ch) { let c = ch.charCodeAt(0); if (c > 0xff) c = CP1252[c] || 0; return c >= 0x80 && c <= 0xbf ? c : -1; }\nfunction demojibake(s) {\n  if (!/[ÂÃâ]/.test(s)) return s;\n  return s.replace(/[ÂÃ][^\\x00-\\x7f]|â[^\\x00-\\x7f]{2}/g, function (seq) {\n    const b1 = contByte(seq.charAt(1)), b2 = seq.length > 2 ? contByte(seq.charAt(2)) : 0;\n    if (b1 < 0 || b2 < 0) return seq;\n    return String.fromCharCode(seq.length > 2 ? (0x2 << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f) : ((seq.charCodeAt(0) & 0x1f) << 6) | (b1 & 0x3f));\n  });\n}\nconst ENT = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '\"', apos: \"'\", dollar: '$', aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú',\n  Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú', ntilde: 'ñ', Ntilde: 'Ñ', uuml: 'ü', Uuml: 'Ü', iexcl: '¡', iquest: '¿', ordf: 'ª', ordm: 'º',\n  deg: '°', middot: '·', laquo: '«', raquo: '»', ndash: '–', mdash: '—', hellip: '…', copy: '©', reg: '®' };\nfunction plainText(s) {\n  s = String(s == null ? '' : s);\n  if (s.length > 400000) s = s.slice(-400000);\n  s = demojibake(s);\n  if (s.normalize) s = s.normalize('NFC');\n  if (/<[a-z!\\/][^>]*>/i.test(s)) s = s.replace(/<(script|style)\\b[\\s\\S]*?<\\/\\1>/gi, ' ').replace(/<[^>]+>/g, ' ');\n  s = s.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, function (all, e) {\n    if (e.charAt(0) === '#') {\n      const c = e.charAt(1).toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);\n      return c > 0 && c < 0x10000 ? String.fromCharCode(c) : ' ';\n    }\n    return Object.prototype.hasOwnProperty.call(ENT, e) ? ENT[e] : all;\n  });\n  return s.replace(/[\\s\\xa0\\u200b-\\u200d\\ufeff]+/g, ' ');\n}\nfunction clean(s) { return String(s == null ? '' : s).replace(/\\s+/g, ' ').trim().slice(0, 60); }\nfunction skel(key) {\n  const p = String(key).split('|');\n  return p[0] + '|' + (p[1] || '') + '|' + p.slice(2).join('').toUpperCase().replace(/[^A-Z0-9]/g, '');\n}\n// Devuelve las compras con la tarjeta que trae un texto. Manda la terminación de la tarjeta; quedan fuera las\n// compras con cargo a la cuenta (las registra FAN), las que son en dólares y las de otra tarjeta.\nfunction parseMail(raw, cards) {\n  const text = plainText(raw);\n  const re = /compra(?:\\W{1,4}en\\W{1,4}(?:(\\d{1,2})\\W{1,4})?cuotas?)?\\W{1,4}por\\W{1,4}?(US\\$|USD|\\$)?\\W{0,3}?([\\d.]+(?:,\\d{1,2})?)(?:\\W{1,4}en\\W{1,4}(\\d{1,2})\\W{1,4}cuotas?)?\\W{1,4}con\\W{1,4}(?:cargo\\W{1,4}a\\W{1,4})?(.{1,60}?)\\s+en\\s+(.{1,80}?)\\s+el\\s+(\\d{1,2})[\\/-](\\d{1,2})[\\/-](\\d{4})(?:\\W{1,4}a\\W{1,4}las)?\\W{1,4}(\\d{1,2}):(\\d{2})/gi;\n  const out = [];\n  let m;\n  while ((m = re.exec(text))) {\n    const cur = (m[2] || '$').toUpperCase(), medio = clean(m[5]), merchant = clean(m[6]);\n    const amount = parseInt(m[3].replace(/\\./g, '').replace(/,.*$/, ''), 10);\n    const date = m[9] + '-' + pad(+m[8]) + '-' + pad(+m[7]), time = pad(+m[10]) + ':' + m[11];\n    if (!validDate(date) || !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time) || !merchant || !(amount > 0)) continue;\n    const card = (/(\\d{4})\\D{0,2}$/.exec(medio) || [])[1] || '';\n    if ((/cuenta/i.test(medio) && !/tarjeta/i.test(medio)) || cur !== '$' || !cards[card]) continue;\n    const n = +(m[1] || m[4] || 1);\n    out.push({ d: date, h: time, c: merchant, m: amount, w: cards[card], n: n >= 1 && n <= 60 ? n : 1,\n      key: date + 'T' + time + '|' + amount + '|' + merchant.toUpperCase() + '|' + card });\n  }\n  return out;\n}\n\n/* ---------- Cuotas (igual que en Master) ---------- */\n// De una compra en cuotas { a: monto total, n: cuotas, f: mes de la cuota 1 }, lo que vence después del mes dado.\n// Esas cuotas ocupan cupo, pero todavía no entran en el total a pagar.\nfunction laterAmt(q, month) {\n  const i = monthsFrom(q.f, month), paid = Math.max(0, Math.min(q.n, i)), now = i >= 0 && i < q.n ? i + 1 : 0;\n  const v = Math.floor(q.a / q.n), paidAmt = paid >= q.n ? q.a : paid * v;\n  const nowAmt = now ? (now === q.n ? q.a - v * (q.n - 1) : v) : 0;\n  return q.a - paidAmt - nowAmt;\n}\n\n/* ---------- Datos ---------- */\nasync function gh(path) {\n  const r = new Request(API + path);\n  r.headers = { Authorization: 'Bearer ' + TOKEN, Accept: 'application/vnd.github+json' };\n  r.timeoutInterval = 20;\n  const data = await r.loadJSON();\n  const code = r.response && r.response.statusCode;\n  if (code && code >= 400) { const e = new Error('GitHub ' + code); e.status = code; throw e; }\n  return data;\n}\nfunction cachePath() { const fm = FileManager.local(); return fm.joinPath(fm.documentsDirectory(), 'master-widget.json'); }\nfunction readCache() {\n  try { const fm = FileManager.local(), p = cachePath(); return fm.fileExists(p) ? JSON.parse(fm.readString(p)) : null; } catch (e) { return null; }\n}\nfunction writeCache(res) { try { FileManager.local().writeString(cachePath(), JSON.stringify(res)); } catch (e) {} }\n\n// Lo publicado por Master + las compras que llegaron al buzón después de la última vez que Master lo leyó\nasync function load() {\n  const list = await gh('/milestones?state=all&per_page=100');\n  const ms = (Array.isArray(list) ? list : []).filter(function (x) { return x && x.title === MS_TITLE; })[0];\n  let st = null;\n  try { st = ms && ms.description ? JSON.parse(ms.description) : null; } catch (e) { st = null; }\n  if (!st || st.app !== 'master') return { msg: 'Abre Master y activa el widget en «Buzón y atajo».' };\n  if (typeof st.used !== 'number') return { msg: 'Abre Master e ingresa la deuda pendiente.' };\n\n  const known = {}, nuevas = [];\n  (st.keys || []).forEach(function (k) { known[k] = 1; });\n  const cards = st.cards && typeof st.cards === 'object' ? st.cards : {};\n  if (st.read > 0) {   // sin una lectura previa de Master no hay desde dónde contar lo nuevo\n    const since = '&since=' + encodeURIComponent(new Date(st.read - 30 * 60000).toISOString().replace(/\\.\\d+Z$/, 'Z'));\n    for (let page = 1; page <= 3; page++) {\n      const issues = await gh('/issues?state=all&sort=created&direction=asc&per_page=100&page=' + page + since);\n      if (!Array.isArray(issues)) break;\n      issues.forEach(function (it) {\n        if (!it || it.pull_request) return;\n        const title = String(it.title || '');\n        parseMail((title.length > 20 ? title + '\\n' : '') + String(it.body || ''), cards).forEach(function (f) {\n          const sk = skel(f.key);\n          if (known[sk]) return;\n          known[sk] = 1;\n          if (st.at && f.d + 'T' + f.h < st.at) return;           // anterior a la deuda inicial: ya está dentro de ella\n          nuevas.push(f);\n        });\n      });\n      if (issues.length < 100) break;\n    }\n  }\n  let used = st.used;\n  const cuotas = (st.cuotas || []).filter(function (q) { return q && q.a > 0 && q.n > 1 && /^\\d{4}-\\d{2}$/.test(String(q.f)); });\n  nuevas.forEach(function (f) {\n    used += f.m;\n    if (f.n > 1) cuotas.push({ a: f.m, n: f.n, f: addMonths(f.d.slice(0, 7), 1) });   // la cuota 1, el mes siguiente a la compra\n  });\n  const month = thisMonth();\n  let later = 0;\n  cuotas.forEach(function (q) { later += laterAmt(q, month); });\n  const buys = (st.ult || []).concat(nuevas).filter(function (b) { return b && b.d && b.m > 0; })\n    .sort(function (a, b) { return (a.d + 'T' + a.h) < (b.d + 'T' + b.h) ? 1 : -1; }).slice(0, 3)\n    .map(function (b) { return { d: b.d, h: b.h, c: String(b.c || 'Compra'), m: b.m, w: b.w === 'A' ? 'A' : 'T' }; });\n  return { due: Math.max(0, used - later), used: used, later: later, month: month, buys: buys, nuevas: nuevas.length, at: Date.now() };\n}\n\n/* ---------- Dibujo ---------- */\nconst WHITE = new Color('#ffffff'), AMBER = new Color('#ffb65c'), TIT = new Color('#ff8a4c'), ADI = new Color('#6fbdf0');\nfunction label(stack, str, size, color, opacity, bold) {\n  const t = stack.addText(str);\n  t.font = bold ? Font.boldSystemFont(size) : Font.systemFont(size);\n  t.textColor = color || WHITE;\n  if (opacity) t.textOpacity = opacity;\n  t.lineLimit = 1;\n  return t;\n}\nfunction build(res, family) {\n  const w = new ListWidget();\n  const lock = String(family || '').indexOf('accessory') === 0;\n  const small = family === 'small';\n  if (lock) {\n    // Pantalla bloqueada: total a pagar y última compra\n    label(w, 'Master ' + (res.msg ? '' : money(res.due)), 14, null, 0, true).minimumScaleFactor = 0.6;\n    if (res.msg) label(w, res.msg, 11).lineLimit = 2;\n    else if (res.buys.length) label(w, res.buys[0].c + ' ' + money(res.buys[0].m), 11).minimumScaleFactor = 0.7;\n    return w;\n  }\n  const g = new LinearGradient();\n  g.colors = [new Color('#40362f'), new Color('#14110f')];\n  g.locations = [0, 1];\n  g.startPoint = new Point(0, 0);\n  g.endPoint = new Point(1, 1);\n  w.backgroundGradient = g;\n  w.setPadding(small ? 12 : 14, small ? 12 : 16, small ? 10 : 12, small ? 12 : 16);\n\n  const head = w.addStack();\n  head.layoutHorizontally();\n  head.centerAlignContent();\n  const mes = res.month ? MESL[+res.month.slice(5, 7) - 1].toUpperCase() : '';\n  label(head, small || !mes ? 'A PAGAR' : 'A PAGAR EN ' + mes, small ? 9 : 10, AMBER, 0, true);\n  head.addSpacer();\n  if (res.at) label(head, (res.old ? 'sin conexión · ' : '') + hm(new Date(res.at)), 9, WHITE, 0.6);\n  w.addSpacer(2);\n\n  if (res.msg) {\n    const t = label(w, res.msg, small ? 12 : 14, WHITE, 0.9);\n    t.lineLimit = 4;\n    w.addSpacer();\n    return w;\n  }\n  const total = label(w, money(res.due), small ? 22 : 28, WHITE, 0, true);\n  total.minimumScaleFactor = 0.5;\n  w.addSpacer(small ? 4 : 8);\n\n  if (!res.buys.length) label(w, 'Aún no hay compras', 12, WHITE, 0.7);\n  res.buys.forEach(function (b, i) {\n    if (i) w.addSpacer(small ? 2 : 4);\n    const row = w.addStack();\n    row.layoutHorizontally();\n    row.centerAlignContent();\n    if (!small) { label(row, dayLabel(b.d) + ' ' + b.h, 10, WHITE, 0.6); row.addSpacer(6); }\n    label(row, b.w, small ? 9 : 10, b.w === 'A' ? ADI : TIT, 0, true);       // T: titular · A: adicional\n    row.addSpacer(4);\n    label(row, b.c, small ? 10 : 12, WHITE, 0.95);\n    row.addSpacer();\n    label(row, money(b.m), small ? 10 : 12, WHITE, 0, true);\n  });\n  w.addSpacer();\n  return w;\n}\n\n/* ---------- Ejecución ---------- */\nlet res;\nif (/^__/.test(TOKEN) || /^__/.test(REPO)) {\n  res = { msg: 'Copia este script desde Master, con el botón «Copiar el script del widget».' };\n} else {\n  try {\n    res = await load();\n    if (!res.msg) writeCache(res);\n  } catch (e) {\n    const c = readCache();\n    if (c && !c.msg) { res = c; res.old = true; }\n    else res = { msg: e && e.status === 401 ? 'El token venció. Copia de nuevo el script desde Master.' : 'No se pudo leer el buzón. Revisa la conexión.' };\n  }\n}\nconst widget = build(res, config.widgetFamily);\nwidget.refreshAfterDate = new Date(Date.now() + 10 * 60 * 1000);\nif (config.runsInWidget) Script.setWidget(widget);\nelse await widget.presentMedium();\nScript.complete();\n"/*WIDGET:END*/;
   // Si la app está en GitHub Pages, el buzón se sugiere en la misma cuenta
   var OWNER = /\.github\.io$/i.test(location.hostname) ? location.hostname.split('.')[0] : '';
   var DIG = {};
@@ -486,7 +490,8 @@ svg { display: block; }
   var items = [];                                              // movimientos, del más antiguo al más reciente
   var cfg = { debt: 0, at: '', limit: LIMIT, ignored: [] };    // deuda inicial, desde cuándo, cupo y avisos descartados
   // De este dispositivo: orden del listado, buzón (repositorio y token), última lectura y lo último que el buzón dejó fuera
-  var prefs = { order: 'desc', repo: '', token: '', last: 0, note: null, other: '', reader: READER };
+  // widget: si se publica el estado para el widget; wm: número del hito; wSig: huella de lo último publicado; wAt: cuándo
+  var prefs = { order: 'desc', repo: '', token: '', last: 0, note: null, other: '', reader: READER, widget: false, wm: 0, wSig: '', wAt: 0 };
   var filter = 'all';                               // 'all' | 'T' titular | 'A' adicional | 'o' cargos y abonos
   var shown = PAGE;
   var fresh = {};                                   // movimientos recién traídos, para marcarlos como nuevos
@@ -553,9 +558,30 @@ svg { display: block; }
   // Formato del aviso: "Te informamos que se ha realizado una compra por $7.930 con Tarjeta de Crédito ****4526
   // en RedGloba*SU CASERO el 30/07/2026 09:34." El texto puede venir con etiquetas HTML, saltos de línea o varios
   // avisos seguidos. El buzón también recibe los avisos de la cuenta (los que usa FAN): esos se dejan pasar.
+  // Si Atajos entrega el correo mal decodificado, «é» llega como «Ã©» y el espacio duro como «Â ». Esto lo repara
+  // letra por letra, sin tocar el texto que viene bien.
+  var CP1252 = { 0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84, 0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02c6: 0x88, 0x2030: 0x89, 0x0160: 0x8a,
+    0x2039: 0x8b, 0x0152: 0x8c, 0x017d: 0x8e, 0x2018: 0x91, 0x2019: 0x92, 0x201c: 0x93, 0x201d: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97, 0x02dc: 0x98,
+    0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b, 0x0153: 0x9c, 0x017e: 0x9e, 0x0178: 0x9f };
+  function contByte(ch) { var c = ch.charCodeAt(0); if (c > 0xff) c = CP1252[c] || 0; return c >= 0x80 && c <= 0xbf ? c : -1; }
+  function demojibake(s) {
+    if (!/[ÂÃâ]/.test(s)) return s;
+    return s.replace(/[ÂÃ][^\x00-\x7f]|â[^\x00-\x7f]{2}/g, function (seq) {
+      var b1 = contByte(seq.charAt(1)), b2 = seq.length > 2 ? contByte(seq.charAt(2)) : 0;
+      if (b1 < 0 || b2 < 0) return seq;
+      return String.fromCharCode(seq.length > 2 ? (0x2 << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f) : ((seq.charCodeAt(0) & 0x1f) << 6) | (b1 & 0x3f));
+    });
+  }
+  // La clave de una compra, sin signos ni acentos en el comercio: así un mismo aviso se reconoce aunque el correo
+  // haya llegado una vez con el texto dañado y otra vez bien.
+  function skel(key) {
+    var p = String(key).split('|');
+    return p[0] + '|' + (p[1] || '') + '|' + p.slice(2).join('').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
   function plainText(s) {
     s = String(s == null ? '' : s);
     if (s.length > 4000000) s = s.slice(-4000000);
+    s = demojibake(s);
     if (s.normalize) s = s.normalize('NFC');   // «é» siempre como una sola letra, venga como venga en el correo
     if (/<[a-z!\/][^>]*>/i.test(s)) s = s.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ');
     if (/&[#a-z0-9]+;/i.test(s)) { var t = document.createElement('textarea'); t.innerHTML = s; s = t.value; }
@@ -564,7 +590,8 @@ svg { display: block; }
   // Busca en un texto todas las compras avisadas y decide de quién es cada una. Manda la terminación de la tarjeta:
   // la palabra «Crédito» puede llegar con el acento dañado (CrÃ©dito, Cr?dito), según cómo Atajos lea el correo.
   function scanMail(text) {
-    var re = /compra(?:\s+en\s+(?:(\d{1,2})\s+)?cuotas?)?\s+por\s+(US\$|USD|\$)?\s?([\d.]+(?:,\d{1,2})?)(?:\s+en\s+(\d{1,2})\s+cuotas?)?\s+con\s+(?:cargo\s+a\s+)?(.{1,60}?)\s+en\s+(.{1,80}?)\s+el\s+(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\s+a\s+las)?\s+(\d{1,2}):(\d{2})/gi;
+    // Entre las palabras fijas del aviso se toleran hasta 4 signos sueltos (un «?» o un espacio dañado), no solo espacios
+    var re = /compra(?:\W{1,4}en\W{1,4}(?:(\d{1,2})\W{1,4})?cuotas?)?\W{1,4}por\W{1,4}?(US\$|USD|\$)?\W{0,3}?([\d.]+(?:,\d{1,2})?)(?:\W{1,4}en\W{1,4}(\d{1,2})\W{1,4}cuotas?)?\W{1,4}con\W{1,4}(?:cargo\W{1,4}a\W{1,4})?(.{1,60}?)\s+en\s+(.{1,80}?)\s+el\s+(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\W{1,4}a\W{1,4}las)?\W{1,4}(\d{1,2}):(\d{2})/gi;
     var out = { found: [], skip: [], account: 0, foreign: 0, other: 0, otherCard: '' }, seen = {}, m;
     while ((m = re.exec(text))) {
       var cur = (m[2] || '$').toUpperCase(), medio = clean(m[5]), merchant = clean(m[6]);
@@ -582,8 +609,8 @@ svg { display: block; }
         continue;
       }
       var key = date + 'T' + time + '|' + amount + '|' + merchant.toUpperCase() + '|' + card;
-      if (seen[key]) continue;
-      seen[key] = 1;
+      if (seen[skel(key)]) continue;
+      seen[skel(key)] = 1;
       var n = +(m[1] || m[4] || 1);
       out.found.push({ date: date, time: time, amount: amount, merchant: merchant, card: card, who: CARDS[card], n: n >= 1 && n <= MAX_N ? n : 1, key: key });
     }
@@ -739,6 +766,10 @@ svg { display: block; }
       prefs.last = prefs.repo && +p.last > 0 && p.reader === READER ? +p.last : 0;   // un lector nuevo repasa todo el buzón
       prefs.note = prefs.repo && p.note && typeof p.note.text === 'string' ? { text: p.note.text.slice(0, 600), at: +p.note.at || 0 } : null;
       prefs.other = prefs.repo && /^\d{4}$/.test(String(p.other || '')) ? String(p.other) : '';
+      prefs.widget = !!(prefs.repo && p.widget);
+      prefs.wm = prefs.widget && +p.wm > 0 ? Math.round(+p.wm) : 0;
+      prefs.wSig = prefs.widget && typeof p.wSig === 'string' ? p.wSig.slice(0, 40) : '';
+      prefs.wAt = prefs.widget && +p.wAt > 0 ? +p.wAt : 0;
     } catch (e) {}
   }
   function savePrefs() { try { localStorage.setItem(LS_PREFS, JSON.stringify(prefs)); } catch (e) {} }
@@ -818,13 +849,15 @@ svg { display: block; }
   /* ---------- Traer compras: buzón de avisos o texto pegado ---------- */
   function pending(parsed, source) {
     var have = {}, ign = {}, ups = [], known = 0, back = [];
-    items.forEach(function (m) { if (m.key) have[m.key] = 1; });
-    cfg.ignored.forEach(function (k) { ign[k] = 1; });
+    items.forEach(function (m) { if (m.key) have[skel(m.key)] = 1; });
+    cfg.ignored.forEach(function (k) { ign[skel(k)] = 1; });
     parsed.found.forEach(function (p) {
-      if (have[p.key]) { known++; return; }
-      if (ign[p.key]) {
+      var sk = skel(p.key);
+      if (have[sk]) { known++; return; }
+      have[sk] = 1;
+      if (ign[sk]) {
         if (source === 'box') { known++; return; }     // se eliminó a propósito: el buzón no la devuelve
-        back.push(p.key);                               // pegarla a mano sí la recupera
+        back.push(sk);                                  // pegarla a mano sí la recupera
       }
       ups.push({ id: 'm' + hash(p.key), type: 'c', date: p.date, time: p.time, desc: p.merchant, amount: p.amount, src: 'mail', key: p.key, card: p.card, who: p.who, n: p.n, ts: Date.now() });
     });
@@ -840,7 +873,7 @@ svg { display: block; }
   async function addParsed(parsed, source) {
     var res = pending(parsed, source), out = { ok: true, found: parsed.found.length, added: 0, sum: 0, old: 0 };
     if (!res.ups.length) return out;
-    var newCfg = res.back.length ? { debt: cfg.debt, at: cfg.at, limit: cfg.limit, ignored: cfg.ignored.filter(function (x) { return res.back.indexOf(x) < 0; }) } : null;
+    var newCfg = res.back.length ? { debt: cfg.debt, at: cfg.at, limit: cfg.limit, ignored: cfg.ignored.filter(function (x) { return res.back.indexOf(skel(x)) < 0; }) } : null;
     busy = true;
     out.ok = await commit(res.ups, [], newCfg);
     busy = false;
@@ -903,9 +936,9 @@ svg { display: block; }
   function verdict(text) {
     var p = parseMail(text);
     if (p.found.length) {
-      var f = p.found[0], what = f.merchant + ' · ' + money(f.amount) + ' · ' + WHO[f.who];
-      if (items.some(function (m) { return m.key === f.key; })) return { k: 'ok', label: 'Compra registrada', detail: what };
-      if (cfg.ignored.indexOf(f.key) >= 0) return { k: 'skip', label: 'Compra que eliminaste', detail: what };
+      var f = p.found[0], fk = skel(f.key), what = f.merchant + ' · ' + money(f.amount) + ' · ' + WHO[f.who];
+      if (items.some(function (m) { return m.key && skel(m.key) === fk; })) return { k: 'ok', label: 'Compra registrada', detail: what };
+      if (cfg.ignored.some(function (k) { return skel(k) === fk; })) return { k: 'skip', label: 'Compra que eliminaste', detail: what };
       return { k: 'new', label: 'Compra sin registrar todavía', detail: what + '. Toca «Leer el buzón ahora», más abajo.' };
     }
     var sk = p.skip[0];
@@ -1028,6 +1061,67 @@ svg { display: block; }
     openSheet('box');   // ahora muestra el estado del buzón y la automatización de Atajos
     render();
     toast('Buzón conectado. ' + (r.added ? addedMsg(r, box.parsed) : box.parsed.found.length ? 'Sus compras ya estaban registradas.' : 'Aún no tiene avisos de la tarjeta: llegarán con tu próxima compra.'), null, null, 6500);
+  }
+
+  /* ---------- Widget de la pantalla de inicio (app Scriptable) ---------- */
+  // Una app web no puede crear widgets. Master publica el utilizado, las compras en cuotas y las últimas compras en un
+  // hito del buzón, y el script de Scriptable calcula el total a pagar del mes y lo dibuja, sumando las compras que
+  // llegaron al buzón después. Solo se publica si se activa el widget.
+  var widgetTimer = 0, widgetBusy = false, widgetErr = '';
+  function widgetState() {
+    var c = compute(), cut = dayKey(new Date(Date.now() - 5 * 86400000)), keys = [], buys = [];
+    for (var i = items.length - 1; i >= 0 && buys.length < 3; i--) {
+      if (items[i].type === 'c') buys.push({ d: items[i].date, h: items[i].time, c: items[i].desc, m: items[i].amount, w: items[i].who });
+    }
+    items.forEach(function (m) { if (m.key && m.date >= cut) keys.push(skel(m.key)); });      // compras recientes ya contadas
+    cfg.ignored.slice(-80).forEach(function (k) { keys.push(skel(k)); });                      // y las eliminadas a propósito
+    // Van las cuotas y no el total a pagar ya calculado: así el widget lo recalcula solo cuando cambia el mes
+    return { v: 1, app: 'master', used: cfg.at ? c.used : null, limit: cfg.limit, at: cfg.at, read: prefs.last || 0, cards: CARDS,
+      cuotas: c.q.active.map(function (m) { return { a: m.amount, n: m.n, f: m.first }; }), ult: buys, keys: keys };
+  }
+  async function ghJson(method, path, body) {
+    var res = await fetch(API + prefs.repo + path, {
+      method: method, cache: 'no-store', body: body ? JSON.stringify(body) : undefined,
+      headers: { Authorization: 'Bearer ' + prefs.token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' }
+    });
+    if (!res.ok) throw fetchError(res.status);
+    return res.json();
+  }
+  async function publishWidget() {
+    // Se espera a que el buzón se haya leído: el widget cuenta como nuevo lo que llegó después de esa lectura
+    if (!canSync || !prefs.repo || !prefs.widget || widgetBusy || loading || syncing || !prefs.last) return;
+    var st = widgetState(), sig = hash(JSON.stringify(st));
+    if (sig === prefs.wSig && prefs.wm) return;
+    widgetBusy = true;
+    try {
+      st.t = Date.now();
+      var desc = JSON.stringify(st);
+      if (!prefs.wm) {
+        var list = await ghJson('GET', '/milestones?state=all&per_page=100');
+        var found = (Array.isArray(list) ? list : []).filter(function (x) { return x && x.title === WIDGET_TITLE; })[0];
+        prefs.wm = found ? found.number : (await ghJson('POST', '/milestones', { title: WIDGET_TITLE, state: 'closed', description: desc })).number;
+        if (found) await ghJson('PATCH', '/milestones/' + prefs.wm, { description: desc });
+      } else {
+        await ghJson('PATCH', '/milestones/' + prefs.wm, { description: desc });
+      }
+      prefs.wSig = sig; prefs.wAt = Date.now(); widgetErr = '';
+    } catch (e) {
+      if (e && e.status === 404) prefs.wm = 0;   // el hito ya no existe: se vuelve a crear en el próximo intento
+      widgetErr = errCode(e);
+    }
+    savePrefs();
+    widgetBusy = false;
+  }
+  function queueWidget() {
+    if (!prefs.widget) return;
+    clearTimeout(widgetTimer);
+    widgetTimer = setTimeout(publishWidget, 1200);
+  }
+  async function widgetOff() {
+    var n = prefs.wm;
+    prefs.widget = false; prefs.wSig = ''; prefs.wAt = 0; savePrefs();
+    clearTimeout(widgetTimer);
+    if (n) { try { await ghJson('PATCH', '/milestones/' + n, { description: '' }); } catch (e) {} }   // no deja los montos guardados en el buzón
   }
 
   /* ---------- Vistas ---------- */
@@ -1225,6 +1319,7 @@ svg { display: block; }
     Array.prototype.forEach.call(app.querySelectorAll('details[id]'), function (d) { if (d.open) open[d.id] = 1; });
     app.innerHTML = h;
     restoreArmed = false; wipeArmed = false;
+    queueWidget();
     Object.keys(open).forEach(function (id) { var d = document.getElementById(id); if (d) d.open = true; });
     if (open['d-backup'] && bkVal) { var nb = document.getElementById('bk-text'); if (nb) nb.value = bkVal; }
   }
@@ -1357,6 +1452,21 @@ svg { display: block; }
         '<p class="note"><strong>La automatización de Atajos es la misma de FAN.</strong> Debe filtrar solo por el remitente del banco, sin condición de asunto: así envía al buzón todos los correos, y FAN toma las compras de la cuenta y esta app, las de la tarjeta.</p>' +
         '<details class="fold"><summary>Crear la automatización desde cero</summary>' +
         '<p class="muted fine">Se crea una sola vez. Envía al buzón cada correo del banco apenas llega a Mail.</p>' + atajoGuide() + '</details>' +
+        '<details class="fold" id="f-widget"' + (prefs.widget ? ' open' : '') + '><summary>Widget en la pantalla de inicio</summary>' +
+        '<p class="muted fine">Muestra el total a pagar de este mes y las tres últimas compras. Se hace con la app gratuita Scriptable, porque una app web no puede crear widgets por sí sola.</p>' +
+        '<ol class="guide">' +
+        '<li><div>Instala <strong>Scriptable</strong> desde el App Store.</div></li>' +
+        '<li><div>Copia el script. Ya va completo, con tu buzón y tu token.<br><button type="button" class="btn tonal small" data-act="copy-widget">Copiar el script del widget</button></div></li>' +
+        '<li><div>Abre Scriptable, toca <strong>+</strong> y pega el script. Toca el título de arriba y nómbralo <strong>Master</strong>. Ejecútalo con <strong>▶</strong>: debe mostrar el total a pagar.</div></li>' +
+        '<li><div>En la pantalla de inicio, mantén presionado un espacio vacío, toca <strong>Editar</strong> y <strong>Agregar widget</strong>. Busca <strong>Scriptable</strong> y elige el tamaño mediano.</div></li>' +
+        '<li><div>Mantén presionado el widget nuevo, toca <strong>Editar widget</strong> y en <strong>Script</strong> elige <strong>Master</strong>.</div></li>' +
+        '</ol>' +
+        '<p class="note">' + (prefs.widget
+          ? '<strong>Widget activado.</strong> ' + (widgetErr ? 'No se pudieron enviar los datos: ' + esc(errMsg(widgetErr)) : prefs.wAt ? 'Datos enviados ' + ago(prefs.wAt) + '.' : 'Enviando los datos…') + ' '
+          : '') +
+        'Para el widget, Master guarda el utilizado, las cuotas y las últimas compras en tu repositorio privado, y el script lleva tu token. iOS decide cada cuánto lo actualiza, normalmente cada varios minutos.' +
+        (prefs.widget ? '<br><button type="button" class="btn ghost small" data-act="widget-off">Desactivar el widget</button>' : '') + '</p>' +
+        '</details>' +
         '<div class="stack"><button type="button" class="btn primary block" data-act="sync-now">Leer el buzón ahora</button>' +
         '<button type="button" class="btn danger block" data-act="disconnect">Desconectar el buzón</button>' +
         '<button type="button" class="btn ghost block" data-act="cancel">Cerrar</button></div></div>';
@@ -1766,6 +1876,13 @@ svg { display: block; }
     if (a === 'copy-url') { copyText(API + prefs.repo + '/issues', 'Dirección copiada'); return; }
     if (a === 'copy-auth') { copyText('Bearer ' + prefs.token, 'Autorización copiada'); return; }
     if (a === 'copy-mails') { copyText(sheet.mails || '', 'Detalle copiado'); return; }
+    if (a === 'copy-widget') {
+      copyText(WIDGET_CODE.replace('__REPO__', function () { return prefs.repo; }).replace('__TOKEN__', function () { return prefs.token; }), 'Script copiado. El widget quedó activado.');
+      if (!prefs.widget) { prefs.widget = true; savePrefs(); }
+      publishWidget();
+      return;
+    }
+    if (a === 'widget-off') { await widgetOff(); closeSheet(); toast('Widget desactivado. Puedes quitarlo de la pantalla de inicio.'); return; }
     if (a === 'ext-copy') { copyText(sheet.text, 'Extracto copiado'); return; }
     if (a === 'ext-xlsx') { exportExcel(); return; }
     if (a === 'ext-share') {
@@ -1776,7 +1893,8 @@ svg { display: block; }
     if (a === 'sync-now') { closeSheet(); syncBox(true, true); return; }   // desde aquí se repasa el buzón completo
     if (a === 'disconnect') {
       if (!sheet.del) { sheet.del = true; b.textContent = 'Toca de nuevo para desconectar'; b.classList.add('armed'); return; }
-      prefs.repo = ''; prefs.token = ''; prefs.last = 0; prefs.note = null; prefs.other = ''; syncErr = ''; savePrefs();
+      if (prefs.widget) await widgetOff();
+      prefs.repo = ''; prefs.token = ''; prefs.last = 0; prefs.note = null; prefs.other = ''; prefs.wm = 0; syncErr = ''; savePrefs();
       closeSheet(); render();
       toast('Buzón desconectado. Tus movimientos siguen aquí.');
       return;
