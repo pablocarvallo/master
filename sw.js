@@ -1,5 +1,5 @@
 // Service worker mínimo: deja la app disponible sin conexión.
-const CACHE = 'master-v2';
+const CACHE = 'master-v2-ds1';
 const ASSETS = [
   './',
   'index.html',
