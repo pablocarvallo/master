@@ -169,7 +169,7 @@ async function load() {
 }
 
 /* ---------- Dibujo ---------- */
-const WHITE = new Color('#ffffff'), AMBER = new Color('#ffb65c'), TIT = new Color('#ff8a4c'), ADI = new Color('#6fbdf0');
+const WHITE = new Color('#ffffff'), AMBER = new Color('#BDEBFB'), TIT = new Color('#DCE6FF'), ADI = new Color('#7FD3F5');
 function label(stack, str, size, color, opacity, bold) {
   const t = stack.addText(str);
   t.font = bold ? Font.boldSystemFont(size) : Font.systemFont(size);
@@ -190,7 +190,7 @@ function build(res, family) {
     return w;
   }
   const g = new LinearGradient();
-  g.colors = [new Color('#40362f'), new Color('#14110f')];
+  g.colors = [new Color('#4D78F3'), new Color('#2141D6')];
   g.locations = [0, 1];
   g.startPoint = new Point(0, 0);
   g.endPoint = new Point(1, 1);
