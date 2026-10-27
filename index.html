@@ -663,6 +663,7 @@ body { font-size: 17px; line-height: 1.38; }
   var YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
   var MAX_AMOUNT = 9999999999;
   var MAX_IGNORED = 400;
+  var MAX_CORTES = 120;
   var PAGE = 80;
   var SENDER = 'enviodigital@bancochile.cl';
   var API = 'https://api.github.com/repos/';
@@ -697,10 +698,12 @@ body { font-size: 17px; line-height: 1.38; }
   var toastEl = document.getElementById('toast');
 
   var items = [];                                              // movimientos, del más antiguo al más reciente
-  var cfg = { debt: 0, at: '', limit: LIMIT, ignored: [] };    // deuda inicial, desde cuándo, cupo y avisos descartados
+  // deuda inicial, desde cuándo, cupo, avisos descartados, fechas de corte de los periodos cerrados y, en meses,
+  // cuánto después del corte se paga el extracto (0: el mismo mes del corte)
+  var cfg = { debt: 0, at: '', limit: LIMIT, ignored: [], cortes: [], payOff: 0 };
   // De este dispositivo: orden del listado, buzón (repositorio y token), última lectura y lo último que el buzón dejó fuera
   // widget: si se publica el estado para el widget; wm: número del hito; wSig: huella de lo último publicado; wAt: cuándo
-  var prefs = { order: 'desc', repo: '', token: '', last: 0, note: null, other: '', reader: READER, widget: false, wm: 0, wSig: '', wAt: 0 };
+  var prefs = { order: 'desc', repo: '', token: '', last: 0, note: null, other: '', reader: READER, widget: false, wm: 0, wSig: '', wAt: 0, payOff: null };
   var filter = 'all';                               // 'all' | 'T' titular | 'A' adicional | 'o' cargos y abonos
   var shown = PAGE;
   var fresh = {};                                   // movimientos recién traídos, para marcarlos como nuevos
@@ -888,7 +891,7 @@ body { font-size: 17px; line-height: 1.38; }
       card: /^\d{4}$/.test(String(p.card || '')) ? String(p.card) : '',
       who: type === 'c' ? (p.who === 'A' ? 'A' : 'T') : '',
       n: n,
-      first: n > 1 ? (YM_RE.test(String(p.first)) ? String(p.first) : addMonths(date.slice(0, 7), 1)) : '',
+      first: n > 1 ? (YM_RE.test(String(p.first)) ? String(p.first) : firstFor(date)) : '',
       ts: +p.ts > 0 ? +p.ts : 0
     };
   }
@@ -899,7 +902,17 @@ body { font-size: 17px; line-height: 1.38; }
     var debt = Math.round(+c.debt), limit = Math.round(+c.limit);
     var at = AT_RE.test(String(c.at)) && validDate(String(c.at).slice(0, 10)) ? String(c.at) : '';
     var ign = Array.isArray(c.ignored) ? c.ignored.filter(function (k) { return typeof k === 'string' && k; }).slice(-MAX_IGNORED) : [];
-    return { debt: at && debt >= 0 && debt <= MAX_AMOUNT ? debt : 0, at: at, limit: limit > 0 && limit <= MAX_AMOUNT ? limit : LIMIT, ignored: ign };
+    var cortes = (Array.isArray(c.cortes) ? c.cortes : []).filter(function (k) { return typeof k === 'string' && validDate(k); });
+    cortes = cortes.filter(function (k, i) { return cortes.indexOf(k) === i; }).sort().slice(-MAX_CORTES);
+    var off = Math.round(+c.payOff);
+    return { debt: at && debt >= 0 && debt <= MAX_AMOUNT ? debt : 0, at: at, limit: limit > 0 && limit <= MAX_AMOUNT ? limit : LIMIT, ignored: ign,
+      cortes: cortes, payOff: off >= 0 && off <= 2 ? off : 0 };
+  }
+  // Copia de la configuración con algunos cambios, sin perder los demás campos
+  function withCfg(ch) {
+    var n = { debt: cfg.debt, at: cfg.at, limit: cfg.limit, ignored: cfg.ignored, cortes: cfg.cortes, payOff: cfg.payOff };
+    Object.keys(ch || {}).forEach(function (k) { n[k] = ch[k]; });
+    return n;
   }
   function sortItems() {
     items.sort(function (a, b) {
@@ -918,12 +931,92 @@ body { font-size: 17px; line-height: 1.38; }
   // total a pagar y las de meses siguientes ocupan cupo, pero todavía no se pagan.
   function cuotaVal(m) { return Math.floor(m.amount / m.n); }
   function cuotaAmt(m, k) { return k === m.n ? m.amount - cuotaVal(m) * (m.n - 1) : cuotaVal(m); }
-  function cuotaState(m) {
-    var i = monthsFrom(m.first, thisMonth());                          // 0: la cuota 1 se paga este mes
+  // «month» es el mes de pago que se mira; por omisión, el mes actual
+  function cuotaState(m, month) {
+    var i = monthsFrom(m.first, month || thisMonth());                 // 0: la cuota 1 se paga ese mes
     var paid = Math.max(0, Math.min(m.n, i)), now = i >= 0 && i < m.n ? i + 1 : 0;
     var paidAmt = paid >= m.n ? m.amount : paid * cuotaVal(m), nowAmt = now ? cuotaAmt(m, now) : 0;
     return { paid: paid, now: now, later: m.n - paid - (now ? 1 : 0), paidAmt: paidAmt, nowAmt: nowAmt, laterAmt: m.amount - paidAmt - nowAmt, end: addMonths(m.first, m.n - 1) };
   }
+  /* ---------- Periodos de facturación ---------- */
+  // El banco cierra el periodo en la fecha de corte (ese día entra) y envía el extracto días después. Al cerrar un periodo
+  // en la app se guarda su fecha de corte: el periodo siguiente parte al día siguiente y lleva las compras posteriores.
+  function nextDay(k) {
+    var d = new Date(Date.UTC(+k.slice(0, 4), +k.slice(5, 7) - 1, +k.slice(8, 10) + 1));
+    return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate());
+  }
+  function daysIn(ym) { return new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate(); }
+  function dayIn(ym, d) { return ym + '-' + pad(Math.min(d, daysIn(ym))); }
+  function corteEnd(k) { return k + 'T24'; }          // queda después de cualquier hora de ese día
+  // Cortes que cuentan: los que no son anteriores a la deuda inicial
+  function cortesOn() { var a = cfg.at ? cfg.at.slice(0, 10) : ''; return cfg.at ? cfg.cortes.filter(function (k) { return k >= a; }) : []; }
+  function lastCorte() { var l = cortesOn(); return l.length ? l[l.length - 1] : ''; }
+  // Inicio del periodo que termina en «corte» (sin corte: el periodo abierto): el día siguiente al corte anterior,
+  // o la deuda inicial si no hay un corte antes
+  function periodStart(corte) {
+    var prev = '';
+    cortesOn().forEach(function (k) { if ((!corte || k < corte) && k > prev) prev = k; });
+    var st = prev ? nextDay(prev) + 'T00:00' : cfg.at;
+    return { at: st < cfg.at ? cfg.at : st, prev: prev };
+  }
+  // Mes en que se paga la cuota 1 de una compra: el del extracto que la incluye. Con un periodo cerrado, el día de
+  // su corte dice a qué extracto va la compra; sin periodos cerrados, el mes siguiente a la compra.
+  function firstFor(date) {
+    var lc = lastCorte();
+    if (!lc || !validDate(String(date))) return addMonths(String(date).slice(0, 7), 1);
+    var ym = date.slice(0, 7), c = date <= dayIn(ym, +lc.slice(8, 10)) ? ym : addMonths(ym, 1);
+    return addMonths(c, cfg.payOff);
+  }
+  function emptyTotals() { return { T: 0, A: 0, g: 0, a: 0, nT: 0, nA: 0, ng: 0, na: 0 }; }
+  function addTotal(t, m) { var k = m.type === 'c' ? m.who : m.type; t[k] += m.amount; t['n' + k]++; }
+  // Totales del periodo abierto (desde el último corte), para «Por tarjeta»
+  function openPeriod() {
+    var ps = periodStart(''), t = emptyTotals();
+    items.forEach(function (m) { if (cfg.at && dtOf(m) >= ps.at) addTotal(t, m); });
+    return { start: ps.at, prev: ps.prev, t: t };
+  }
+  // Extracto al corte: la deuda al inicio del periodo y los movimientos desde ese inicio hasta el día del corte. Lo
+  // posterior queda para el periodo siguiente. «pay» es el mes en que se paga el extracto: de las compras en cuotas
+  // entran las cuotas que vencen hasta ese mes.
+  function extractData(corte, pay) {
+    var ps = periodStart(corte), end = corteEnd(corte);
+    var d = { corte: corte, pay: pay, start: ps.at, prev: ps.prev, usedStart: cfg.debt, rows: [], after: [], afterSum: 0, t: emptyTotals(),
+      cuotas: [], nowAmt: 0, nowN: 0, laterAmt: 0, laterN: 0 };
+    items.forEach(function (m) {
+      var k = dtOf(m);
+      if (k < cfg.at) return;                                   // anterior a la deuda inicial: ya está dentro de ella
+      if (k < d.start) { d.usedStart += uses(m); return; }      // de periodos anteriores
+      if (k >= end) { d.after.push(m); d.afterSum += uses(m); return; }
+      d.rows.push(m); addTotal(d.t, m);
+    });
+    d.used = d.rows.reduce(function (sum, m) { return sum + uses(m); }, d.usedStart);
+    items.forEach(function (m) {
+      if (m.type !== 'c' || m.n < 2 || m.date > corte) return;
+      var st = cuotaState(m, pay);
+      if (st.paid >= m.n) return;
+      d.cuotas.push({ m: m, st: st });
+      d.nowAmt += st.nowAmt; d.nowN += st.now ? 1 : 0; d.laterAmt += st.laterAmt; d.laterN += st.later;
+    });
+    d.avail = cfg.limit - d.used;
+    d.due = Math.max(0, d.used - d.laterAmt);
+    d.closed = cfg.cortes.indexOf(corte) >= 0;
+    return d;
+  }
+  // Fecha de corte sugerida: un mes después del último corte, si ya pasó; si no, hoy
+  function defaultCorte() {
+    var t = todayKey(), lc = lastCorte();
+    if (!lc) return t;
+    var nx = dayIn(addMonths(lc.slice(0, 7), 1), +lc.slice(8, 10));
+    return nx < t ? nx : t;
+  }
+  function payOffset() { return prefs.payOff !== null && prefs.payOff !== undefined ? prefs.payOff : cfg.payOff; }
+  function corteError(k) {
+    if (!validDate(k)) return 'Indica la fecha de corte del periodo.';
+    if (k < cfg.at.slice(0, 10)) return 'La fecha de corte no puede ser anterior a la deuda inicial (' + fmtFull(cfg.at.slice(0, 10)) + ').';
+    if (k > todayKey()) return 'La fecha de corte no puede ser futura.';
+    return '';
+  }
+
   function cuotasInfo() {
     var q = { active: [], done: [], nowAmt: 0, nowN: 0, laterAmt: 0, laterN: 0 };
     items.forEach(function (m) {
@@ -975,6 +1068,7 @@ body { font-size: 17px; line-height: 1.38; }
       prefs.last = prefs.repo && +p.last > 0 && p.reader === READER ? +p.last : 0;   // un lector nuevo repasa todo el buzón
       prefs.note = prefs.repo && p.note && typeof p.note.text === 'string' ? { text: p.note.text.slice(0, 600), at: +p.note.at || 0 } : null;
       prefs.other = prefs.repo && /^\d{4}$/.test(String(p.other || '')) ? String(p.other) : '';
+      prefs.payOff = p.payOff === 0 || p.payOff === 1 || p.payOff === 2 ? p.payOff : null;
       prefs.widget = !!(prefs.repo && p.widget);
       prefs.wm = prefs.widget && +p.wm > 0 ? Math.round(+p.wm) : 0;
       prefs.wSig = prefs.widget && typeof p.wSig === 'string' ? p.wSig.slice(0, 40) : '';
@@ -1010,7 +1104,7 @@ body { font-size: 17px; line-height: 1.38; }
       try {
         for (var i = 0; i < ups.length; i++) await db.collection(COL).doc(ups[i].id).set(toDoc(ups[i]));
         for (var j = 0; j < rems.length; j++) await db.collection(COL).doc(rems[j]).delete();
-        if (newCfg) await db.doc(CFG_PATH).set({ debt: newCfg.debt, at: newCfg.at, limit: newCfg.limit, ignored: newCfg.ignored });
+        if (newCfg) await db.doc(CFG_PATH).set({ debt: newCfg.debt, at: newCfg.at, limit: newCfg.limit, ignored: newCfg.ignored, cortes: newCfg.cortes || [], payOff: newCfg.payOff || 0 });
       } catch (e) { toast('No se pudo guardar. Intenta de nuevo.'); return false; }
     }
     items = next; sortItems();
@@ -1082,7 +1176,7 @@ body { font-size: 17px; line-height: 1.38; }
   async function addParsed(parsed, source) {
     var res = pending(parsed, source), out = { ok: true, found: parsed.found.length, added: 0, sum: 0, old: 0 };
     if (!res.ups.length) return out;
-    var newCfg = res.back.length ? { debt: cfg.debt, at: cfg.at, limit: cfg.limit, ignored: cfg.ignored.filter(function (x) { return res.back.indexOf(skel(x)) < 0; }) } : null;
+    var newCfg = res.back.length ? withCfg({ ignored: cfg.ignored.filter(function (x) { return res.back.indexOf(skel(x)) < 0; }) }) : null;
     busy = true;
     out.ok = await commit(res.ups, [], newCfg);
     busy = false;
@@ -1399,14 +1493,14 @@ body { font-size: 17px; line-height: 1.38; }
       '</ol></section>';
   }
 
-  function totalsBlock(c) {
-    var t = c.t, sum = t.T + t.A;
+  function totalsBlock() {
+    var op = openPeriod(), t = op.t, sum = t.T + t.A;
     function tile(k) {
       var n = t['n' + k];
       return '<div class="tile ' + k + '"><span class="who"><i></i>' + WHO[k] + '</span><b>' + money(t[k]) + '</b>' +
         '<small>' + (n ? n + ' ' + plural(n, 'compra', 'compras') : 'Sin compras') + (DIG[k] ? ' · ··' + DIG[k] : '') + '</small></div>';
     }
-    var h = '<section class="sec" aria-label="Totales por tarjeta"><div class="sec-head"><h2>Por tarjeta</h2><span class="sec-note">Desde el ' + fmt(cfg.at.slice(0, 10)) + '</span></div>';
+    var h = '<section class="sec" aria-label="Totales por tarjeta"><div class="sec-head"><h2>Por tarjeta</h2><span class="sec-note">' + (op.prev ? 'Periodo desde el ' + fmt(op.start.slice(0, 10)) : 'Desde el ' + fmt(cfg.at.slice(0, 10))) + '</span></div>';
     if (sum > 0) {
       h += '<div class="split" role="img" aria-label="Titular ' + Math.round(t.T / sum * 100) + '%, Adicional ' + Math.round(t.A / sum * 100) + '% de las compras">' +
         (t.T ? '<i class="T" style="flex:' + t.T + ' 1 0"></i>' : '') + (t.A ? '<i class="A" style="flex:' + t.A + ' 1 0"></i>' : '') + '</div>';
@@ -1487,18 +1581,21 @@ body { font-size: 17px; line-height: 1.38; }
         }).join('') + '</div>';
     }
 
-    // Lista en orden cronológico, con la marca de la deuda inicial en su lugar
-    var seq = [], placed = !cfg.at;
+    // Lista en orden cronológico, con las marcas de la deuda inicial y de cada corte de periodo en su lugar
+    var marks = [], mi = 0, seq = [];
+    if (cfg.at) marks.push({ k: cfg.at, h: '<li class="anchor"><span>Deuda inicial ' + money(cfg.debt) + ' · ' + fmtAt(cfg.at) + '</span></li>' });
+    cortesOn().forEach(function (k) { marks.push({ k: corteEnd(k), h: '<li class="anchor"><span>Corte del periodo · ' + fmt(k) + '</span></li>' }); });
+    marks.sort(function (a, b) { return a.k < b.k ? -1 : a.k > b.k ? 1 : 0; });
     c.rows.forEach(function (r) {
-      if (!placed && r.counts) { seq.push(null); placed = true; }
+      while (mi < marks.length && dtOf(r.m) >= marks[mi].k) seq.push(marks[mi++]);
       if (matches(r.m)) seq.push(r);
     });
-    if (!placed) seq.push(null);
+    while (mi < marks.length) seq.push(marks[mi++]);
     if (prefs.order === 'desc') seq.reverse();
     var total = seq.length, cut = seq.slice(0, shown);
     h += '<ul class="list">';
     cut.forEach(function (r) {
-      h += r ? rowHtml(r) : '<li class="anchor"><span>Deuda inicial ' + money(cfg.debt) + ' · ' + fmtAt(cfg.at) + '</span></li>';
+      h += r.m ? rowHtml(r) : r.h;
     });
     h += '</ul>';
     if (total > shown) h += '<button class="btn ghost block" data-act="more">Ver más movimientos (' + (total - shown) + ')</button>';
@@ -1519,7 +1616,7 @@ body { font-size: 17px; line-height: 1.38; }
     var h = header() + hero(c);
     if (!loading) {
       h += actions();
-      if (items.length) h += (cfg.at ? totalsBlock(c) : '') + cuotasBlock() + listBlock(c);
+      if (items.length) h += (cfg.at ? totalsBlock() : '') + cuotasBlock() + listBlock(c);
       else h += startBlock();
       h += dataBlock();
     }
@@ -1701,73 +1798,160 @@ body { font-size: 17px; line-height: 1.38; }
   }
 
   /* ---------- Extracto ---------- */
-  // Todos los movimientos desde la deuda inicial, con el total a pagar. Aquí los montos van como deuda:
-  // compras y cargos en positivo, abonos en negativo. El total a pagar deja fuera las cuotas que vencen después.
-  function buildExtract() {
-    var c = compute(), t = c.t, q = c.q, now = todayKey(), mes = monthName(thisMonth());
-    var rows = c.rows.filter(function (r) { return r.counts; });
+  // Primero se pide la fecha de corte y el mes de pago; luego se muestra el extracto de ese periodo, que se puede copiar,
+  // exportar a Excel y, si coincide con el del banco, cerrar para iniciar el periodo siguiente.
+  // Los montos van como deuda: compras y cargos en positivo, abonos en negativo.
+  function startLabel(d) { return d.prev ? 'Deuda al corte anterior (' + fmt(d.prev) + ')' : 'Deuda inicial'; }
+  function buildExtract(corte, pay) {
+    var d = extractData(corte, pay), t = d.t, mes = monthName(pay), sd = d.start.slice(0, 10);
     function kind(m) { return m.type === 'c' ? WHO[m.who] + (m.n > 1 ? ' · ' + m.n + ' cuotas' : '') : m.type === 'g' ? 'Cargo' : 'Abono'; }
     function owed(m) { return money(uses(m)); }
-    function cuotaLine(m) {
-      var st = cuotaState(m);
-      return m.n + ' cuotas de ' + money(cuotaVal(m)) + ' · este mes: ' + (st.now ? 'cuota ' + st.now + ', ' + money(st.nowAmt) : 'ninguna') +
+    function startWhen() { return d.prev ? fmtFull(d.prev) : fmtFull(sd) + ', ' + d.start.slice(11); }
+    function cuotaLine(m, st) {
+      return m.n + ' cuotas de ' + money(cuotaVal(m)) + ' · en ' + mes + ': ' + (st.now ? 'cuota ' + st.now + ', ' + money(st.nowAmt) : 'ninguna') +
         ' · después: ' + (st.later ? st.later + ' ' + plural(st.later, 'cuota', 'cuotas') + ', ' + money(st.laterAmt) + ', hasta ' + monthName(st.end) : 'ninguna');
     }
 
-    var L = ['MASTER · Extracto de la tarjeta', 'Generado el ' + fmtFull(now) + ', ' + nowTime(), '',
-      'Cupo: ' + money(cfg.limit), 'Utilizado: ' + money(c.used), 'Disponible: ' + money(c.avail), '',
-      'DEUDA INICIAL', fmtNum(cfg.at.slice(0, 10)) + ' ' + cfg.at.slice(11) + ' · ' + money(cfg.debt), '',
-      'MOVIMIENTOS (' + rows.length + ')'];
-    if (!rows.length) L.push('Sin movimientos desde la deuda inicial.');
-    rows.forEach(function (r, i) { var m = r.m; L.push((i + 1) + '. ' + fmtNum(m.date) + ' ' + m.time + ' · ' + m.desc + ' · ' + kind(m) + ' · ' + owed(m)); });
+    var L = ['MASTER · Extracto de la tarjeta', 'Fecha de corte: ' + fmtNum(corte) + ' · periodo del ' + fmtNum(sd) + ' al ' + fmtNum(corte),
+      'Se paga en ' + mes, 'Generado el ' + fmtFull(todayKey()) + ', ' + nowTime(), '',
+      'Cupo: ' + money(cfg.limit), 'Utilizado al corte: ' + money(d.used), 'Disponible al corte: ' + money(d.avail), '',
+      startLabel(d).toUpperCase() + ': ' + money(d.usedStart), '',
+      'MOVIMIENTOS DEL PERIODO (' + d.rows.length + ')'];
+    if (!d.rows.length) L.push('Sin movimientos en el periodo.');
+    d.rows.forEach(function (m, i) { L.push((i + 1) + '. ' + fmtNum(m.date) + ' ' + m.time + ' · ' + m.desc + ' · ' + kind(m) + ' · ' + owed(m)); });
     L.push('', 'TOTALES',
-      'Deuda inicial: ' + money(cfg.debt),
+      startLabel(d) + ': ' + money(d.usedStart),
       'Titular (' + t.nT + ' ' + plural(t.nT, 'compra', 'compras') + '): ' + money(t.T),
       'Adicional (' + t.nA + ' ' + plural(t.nA, 'compra', 'compras') + '): ' + money(t.A),
       'Cargos (' + t.ng + '): ' + money(t.g),
       'Abonos (' + t.na + '): ' + money(-t.a),
-      'Utilizado: ' + money(c.used));
-    if (q.laterAmt > 0) L.push('Cuotas que vencen después de ' + mes + ' (' + q.laterN + '): ' + money(-q.laterAmt));
-    L.push('', 'TOTAL A PAGAR: ' + money(c.due));
-    if (q.active.length) {
+      'Utilizado al corte: ' + money(d.used));
+    if (d.laterAmt > 0) L.push('Cuotas que vencen después de ' + mes + ' (' + d.laterN + '): ' + money(-d.laterAmt));
+    L.push('', 'TOTAL A PAGAR: ' + money(d.due));
+    if (d.cuotas.length) {
       L.push('', 'COMPRAS EN CUOTAS');
-      q.active.forEach(function (m) { L.push(m.desc + ' · ' + WHO[m.who] + ' · ' + cuotaLine(m)); });
-      L.push('Cuotas de este mes, dentro del total a pagar: ' + money(q.nowAmt));
+      d.cuotas.forEach(function (x) { L.push(x.m.desc + ' · ' + WHO[x.m.who] + ' · ' + cuotaLine(x.m, x.st)); });
+      L.push('Cuotas de ' + mes + ', dentro del total a pagar: ' + money(d.nowAmt));
+    }
+    if (d.after.length) {
+      L.push('', 'DESPUÉS DEL CORTE (' + d.after.length + '): quedan para el periodo siguiente · ' + money(d.afterSum));
+      d.after.forEach(function (m, i) { L.push((i + 1) + '. ' + fmtNum(m.date) + ' ' + m.time + ' · ' + m.desc + ' · ' + kind(m) + ' · ' + owed(m)); });
     }
 
-    var h = '<dl class="ext-kv"><div><dt>Cupo</dt><dd>' + money(cfg.limit) + '</dd></div><div><dt>Utilizado</dt><dd>' + money(c.used) + '</dd></div><div><dt>Disponible</dt><dd>' + money(c.avail) + '</dd></div></dl>' +
-      '<h3>Movimientos (' + rows.length + ')</h3><ul class="ext-list">' +
-      '<li><b>Deuda inicial</b><i>' + money(cfg.debt) + '</i><span>' + fmtFull(cfg.at.slice(0, 10)) + ', ' + cfg.at.slice(11) + '</span></li>' +
-      rows.map(function (r) { var m = r.m; return '<li><b>' + esc(m.desc) + '</b><i' + (m.type === 'a' ? ' class="in"' : '') + '>' + owed(m) + '</i><span>' + fmtFull(m.date) + ', ' + m.time + ' · ' + kind(m) + '</span></li>'; }).join('') + '</ul>' +
+    function li(m) { return '<li><b>' + esc(m.desc) + '</b><i' + (m.type === 'a' ? ' class="in"' : '') + '>' + owed(m) + '</i><span>' + fmtFull(m.date) + ', ' + m.time + ' · ' + kind(m) + '</span></li>'; }
+    var h = '<dl class="ext-kv"><div><dt>Cupo</dt><dd>' + money(cfg.limit) + '</dd></div><div><dt>Utilizado al corte</dt><dd>' + money(d.used) + '</dd></div><div><dt>Disponible al corte</dt><dd>' + money(d.avail) + '</dd></div></dl>' +
+      '<h3>Movimientos del periodo (' + d.rows.length + ')</h3><ul class="ext-list">' +
+      '<li><b>' + startLabel(d) + '</b><i>' + money(d.usedStart) + '</i><span>' + startWhen() + '</span></li>' +
+      d.rows.map(li).join('') + '</ul>' +
       '<h3>Totales</h3><dl class="ext-kv">' +
-      '<div><dt>Deuda inicial</dt><dd>' + money(cfg.debt) + '</dd></div>' +
+      '<div><dt>' + startLabel(d) + '</dt><dd>' + money(d.usedStart) + '</dd></div>' +
       '<div><dt>Titular · ' + t.nT + ' ' + plural(t.nT, 'compra', 'compras') + '</dt><dd>' + money(t.T) + '</dd></div>' +
       '<div><dt>Adicional · ' + t.nA + ' ' + plural(t.nA, 'compra', 'compras') + '</dt><dd>' + money(t.A) + '</dd></div>' +
       '<div><dt>Cargos · ' + t.ng + '</dt><dd>' + money(t.g) + '</dd></div>' +
       '<div><dt>Abonos · ' + t.na + '</dt><dd class="in">' + money(-t.a) + '</dd></div>' +
-      '<div class="sum"><dt>Utilizado</dt><dd>' + money(c.used) + '</dd></div>' +
-      (q.laterAmt > 0 ? '<div><dt>Cuotas que vencen después · ' + q.laterN + '</dt><dd>' + money(-q.laterAmt) + '</dd></div>' : '') + '</dl>' +
-      '<div class="ext-total"><span>Total a pagar</span><b>' + money(c.due) + '</b></div>';
-    if (q.active.length) {
+      '<div class="sum"><dt>Utilizado al corte</dt><dd>' + money(d.used) + '</dd></div>' +
+      (d.laterAmt > 0 ? '<div><dt>Cuotas que vencen después · ' + d.laterN + '</dt><dd>' + money(-d.laterAmt) + '</dd></div>' : '') + '</dl>' +
+      '<div class="ext-total"><span>Total a pagar</span><b>' + money(d.due) + '</b></div>';
+    if (d.cuotas.length) {
       h += '<h3>Compras en cuotas</h3><ul class="ext-list">' +
-        q.active.map(function (m) { return '<li><b>' + esc(m.desc) + '</b><i>' + money(m.amount) + '</i><span>' + WHO[m.who] + ' · ' + cuotaLine(m) + '</span></li>'; }).join('') + '</ul>' +
-        '<p class="note">El total a pagar incluye <strong>' + money(q.nowAmt) + '</strong> en cuotas de ' + mes + '.' +
-        (q.laterAmt > 0 ? ' Quedan fuera <strong>' + money(q.laterAmt) + '</strong> en cuotas que vencen después: ocupan cupo, pero se pagan en sus meses.' : '') + '</p>';
+        d.cuotas.map(function (x) { return '<li><b>' + esc(x.m.desc) + '</b><i>' + money(x.m.amount) + '</i><span>' + WHO[x.m.who] + ' · ' + cuotaLine(x.m, x.st) + '</span></li>'; }).join('') + '</ul>' +
+        '<p class="note">El total a pagar incluye <strong>' + money(d.nowAmt) + '</strong> en cuotas de ' + mes + '.' +
+        (d.laterAmt > 0 ? ' Quedan fuera <strong>' + money(d.laterAmt) + '</strong> en cuotas que vencen después: ocupan cupo, pero se pagan en sus meses.' : '') + '</p>';
     }
-    return { html: h, text: L.join('\n') };
+    if (d.after.length) {
+      h += '<h3>Después del corte (' + d.after.length + ')</h3>' +
+        '<p class="muted fine">No entran en este extracto: quedan para el periodo siguiente. Suman ' + money(d.afterSum) + '.</p>' +
+        '<ul class="ext-list">' + d.after.map(li).join('') + '</ul>';
+    }
+    return { data: d, html: h, text: L.join('\n') };
   }
-  function sheetExtract(s) {
-    var ex = buildExtract();
-    s.text = ex.text;
-    var canShare = !hasHost && typeof navigator.share === 'function';
-    return '<div class="panel" id="sheet-form" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">' +
+
+  // Paso 1: fecha de corte y mes de pago
+  function sheetPick(s) {
+    return '<form class="panel" id="sheet-form" novalidate role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">' +
       '<h2 id="sheet-title">Extracto</h2>' +
-      '<p class="sub">Todos los movimientos desde la deuda inicial del ' + fmtFull(cfg.at.slice(0, 10)) + '. Generado el ' + fmtFull(todayKey()) + ', ' + nowTime() + '.</p>' +
+      '<p class="sub">Indica la fecha de corte del periodo. El banco cierra el periodo ese día y envía el extracto unos días después: las compras posteriores al corte no entran y quedan para el periodo siguiente.</p>' +
+      '<label class="field"><span>Fecha de corte</span><input type="date" id="f-corte" value="' + s.corte + '" min="' + cfg.at.slice(0, 10) + '" max="' + todayKey() + '" required></label>' +
+      '<div class="field"><span id="f-pay-label">El extracto se paga en</span><div class="stepper">' +
+      '<button type="button" data-act="pay-month" data-d="-1" aria-label="Mes anterior">' + I_MINUS + '</button>' +
+      '<output class="step-val" id="f-pay" aria-labelledby="f-pay-label">' + monthName(s.pay) + '</output>' +
+      '<button type="button" data-act="pay-month" data-d="1" aria-label="Mes siguiente">' + I_PLUS + '</button></div>' +
+      '<span class="hint">De las compras en cuotas, entran en el total las cuotas que se pagan hasta ese mes.</span></div>' +
+      '<p class="note" id="f-period"></p>' +
+      '<p class="err" id="f-err" role="alert" hidden></p>' +
+      '<div class="stack"><button type="submit" class="btn primary block">Generar extracto</button>' +
+      '<button type="button" class="btn ghost block" data-act="cancel">Cancelar</button></div></form>';
+  }
+  // Resumen del periodo elegido, mientras se cambia la fecha o el mes de pago
+  function periodPreview() {
+    var out = document.getElementById('f-period'), pv = document.getElementById('f-pay');
+    if (!out || !sheet || sheet.mode !== 'extract') return;
+    if (pv) pv.textContent = monthName(sheet.pay);
+    var k = val('f-corte'), err = corteError(k);
+    if (err) { out.textContent = err; return; }
+    var d = extractData(k, sheet.pay), n = d.rows.length, a = d.after.length;
+    out.innerHTML = 'Periodo del ' + fmt(d.start.slice(0, 10)) + ' al ' + fmt(k) + ': ' + n + ' ' + plural(n, 'movimiento', 'movimientos') +
+      ' · total a pagar <strong>' + money(d.due) + '</strong>.' +
+      (a ? ' Quedan fuera ' + a + ' ' + plural(a, 'movimiento posterior', 'movimientos posteriores') + ' al corte, por ' + money(d.afterSum) + ', que pasan al periodo siguiente.' : '') +
+      (d.closed ? ' Este periodo ya está cerrado.' : '');
+  }
+  function payBounds() { var m = sheet.corte.slice(0, 7); return [m, addMonths(m, 2)]; }
+  function corteInput() {
+    var k = val('f-corte');
+    if (!corteError(k)) {
+      sheet.corte = k;
+      var b = payBounds();
+      if (sheet.payAuto) sheet.pay = addMonths(k.slice(0, 7), payOffset());
+      sheet.pay = sheet.pay < b[0] ? b[0] : sheet.pay > b[1] ? b[1] : sheet.pay;
+    }
+    periodPreview();
+  }
+  function genExtract() {
+    var k = val('f-corte'), err = corteError(k);
+    if (err) { setErr(err); return; }
+    sheet.corte = k; sheet.step = 'view';
+    prefs.payOff = monthsFrom(k.slice(0, 7), sheet.pay); savePrefs();
+    renderSheet();
+    var f = document.getElementById('sheet-form');
+    if (f) { f.scrollTop = 0; f.focus(); }
+  }
+  // Paso 2: el extracto del periodo
+  function sheetExtract(s) {
+    if (s.step !== 'view') return sheetPick(s);
+    var ex = buildExtract(s.corte, s.pay), d = ex.data;
+    s.text = ex.text; s.ex = d;
+    var canShare = !hasHost && typeof navigator.share === 'function', nd = fmt(nextDay(s.corte));
+    var close = d.closed
+      ? '<p class="note"><strong>Periodo cerrado.</strong> El periodo siguiente parte el ' + nd + ' y lleva los movimientos posteriores al corte.</p>' +
+        '<button type="button" class="btn ghost block" data-act="ext-reopen">Reabrir este periodo</button>'
+      : '<p class="note">Si coincide con el extracto del banco, inicia el periodo siguiente: partirá el ' + nd +
+        (d.after.length ? ' con los ' + d.after.length + ' ' + plural(d.after.length, 'movimiento posterior', 'movimientos posteriores') + ' al corte' : '') +
+        ', y «Por tarjeta» mostrará solo ese periodo.</p>' +
+        '<button type="button" class="btn tonal block" data-act="ext-close">Iniciar el periodo siguiente</button>';
+    return '<div class="panel" id="sheet-form" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">' +
+      '<h2 id="sheet-title">Extracto al ' + fmt(s.corte) + '</h2>' +
+      '<p class="sub">Periodo del ' + fmtFull(d.start.slice(0, 10)) + ' al ' + fmtFull(s.corte) + ', fecha de corte. Se paga en ' + monthName(s.pay) + '. Generado el ' + fmtFull(todayKey()) + ', ' + nowTime() + '.</p>' +
       ex.html +
       '<div class="stack"><button type="button" class="btn primary block" data-act="ext-copy">Copiar extracto</button>' +
       (!hasHost || saver ? '<button type="button" class="btn tonal block" data-act="ext-xlsx">Exportar a Excel</button>' : '') +
-      (canShare ? '<button type="button" class="btn tonal block" data-act="ext-share">Compartir</button>' : '') +
+      (canShare ? '<button type="button" class="btn tonal block" data-act="ext-share">Compartir</button>' : '') + '</div>' +
+      close +
+      '<div class="stack"><button type="button" class="btn ghost block" data-act="ext-pick">Cambiar la fecha de corte</button>' +
       '<button type="button" class="btn ghost block" data-act="cancel">Cerrar</button></div></div>';
+  }
+  async function setCortes(list, msg, undoMsg) {
+    if (busy) return;
+    var prev = cfg, corte = sheet.corte, pay = sheet.pay;
+    var next = withCfg({ cortes: list.filter(function (k, i) { return list.indexOf(k) === i; }).sort().slice(-MAX_CORTES),
+      payOff: list.indexOf(corte) >= 0 ? monthsFrom(corte.slice(0, 7), pay) : cfg.payOff });
+    busy = true;
+    var ok = await commit([], [], next);
+    busy = false;
+    if (!ok) return;
+    if (sheet && sheet.mode === 'extract') renderSheet();
+    toast(msg, 'Deshacer', function () {
+      commit([], [], prev).then(function () { if (sheet && sheet.mode === 'extract') renderSheet(); toast(undoMsg); });
+    }, 7000);
   }
 
   /* ---------- Exportar el extracto a Excel ---------- */
@@ -1818,8 +2002,8 @@ body { font-size: 17px; line-height: 1.38; }
   function excelDate(k) { return Date.UTC(+k.slice(0, 4), +k.slice(5, 7) - 1, +k.slice(8, 10)) / 86400000 + 25569; }
   function excelTime(t) { return (+t.slice(0, 2) * 60 + +t.slice(3, 5)) / 1440; }
 
-  function buildXlsx() {
-    var c = compute(), t = c.t, q = c.q, mes = monthName(thisMonth()), at = cfg.at;
+  function buildXlsx(d) {
+    var t = d.t, mes = monthName(d.pay), sd = d.start.slice(0, 10);
     var H = 1, M = 2, MB = 3, D = 4, T = 5, TT = 6, B = 7;        // estilos: encabezado, monto, monto en negrita, fecha, hora, título, negrita
     var strings = [], index = {}, refs = 0;
     function sst(v) { refs++; if (!(('k' + v) in index)) { index['k' + v] = strings.length; strings.push(v); } return index['k' + v]; }
@@ -1848,40 +2032,45 @@ body { font-size: 17px; line-height: 1.38; }
 
     var resumen = [
       [{ v: 'Master · Extracto de la tarjeta de crédito', s: TT }],
-      ['Generado el ' + fmtFull(todayKey()) + ', ' + nowTime()],
-      ['Movimientos desde la deuda inicial del ' + fmtFull(at.slice(0, 10)) + ', ' + at.slice(11)],
+      ['Fecha de corte: ' + fmtFull(d.corte) + ' · periodo del ' + fmtFull(sd) + ' al ' + fmtFull(d.corte)],
+      ['Se paga en ' + mes + ' · generado el ' + fmtFull(todayKey()) + ', ' + nowTime()],
       [],
       [h('Resumen'), h('Monto')],
       ['Cupo', money$(cfg.limit)],
-      ['Utilizado', money$(c.used)],
-      ['Disponible', money$(c.avail)],
-      [{ v: 'Total a pagar', s: B }, money$(c.due, true)],
+      ['Utilizado al corte', money$(d.used)],
+      ['Disponible al corte', money$(d.avail)],
+      [{ v: 'Total a pagar', s: B }, money$(d.due, true)],
       [],
       [h('Detalle'), h('Monto'), h('Cantidad')],
-      ['Deuda inicial', money$(cfg.debt)],
+      [startLabel(d), money$(d.usedStart)],
       ['Compras Titular', money$(t.T), t.nT],
       ['Compras Adicional', money$(t.A), t.nA],
       ['Cargos', money$(t.g), t.ng],
       ['Abonos', money$(0 - t.a), t.na],
-      [{ v: 'Utilizado', s: B }, money$(c.used, true)],
-      ['Cuotas que vencen después de ' + mes, money$(0 - q.laterAmt), q.laterN],
-      [{ v: 'Total a pagar', s: B }, money$(c.due, true)],
+      [{ v: 'Utilizado al corte', s: B }, money$(d.used, true)],
+      ['Cuotas que vencen después de ' + mes, money$(0 - d.laterAmt), d.laterN],
+      [{ v: 'Total a pagar', s: B }, money$(d.due, true)],
       [],
-      ['Cuotas de ' + mes + ', incluidas en el total a pagar', money$(q.nowAmt), q.nowN]
+      ['Cuotas de ' + mes + ', incluidas en el total a pagar', money$(d.nowAmt), d.nowN]
     ];
-    // Movimientos: la deuda inicial y lo que cuenta desde ella, con los montos como deuda. La suma de «Monto» es el utilizado.
-    var mov = [[h('N°'), h('Fecha'), h('Hora'), h('Descripción'), h('Tipo'), h('Tarjeta'), h('Cuotas'), h('Monto')],
-      ['', { v: excelDate(at.slice(0, 10)), s: D }, { v: excelTime(at.slice(11)), s: T }, 'Deuda inicial', 'Deuda inicial', '', '', money$(cfg.debt)]];
-    c.rows.forEach(function (r) {
-      if (!r.counts) return;
-      var m = r.m, buy = m.type === 'c';
-      mov.push([mov.length - 1, { v: excelDate(m.date), s: D }, { v: excelTime(m.time), s: T }, m.desc,
-        buy ? 'Compra' : m.type === 'g' ? 'Cargo' : 'Abono', buy ? WHO[m.who] : '', buy ? m.n : '', money$(uses(m))]);
-    });
+    if (d.after.length) resumen.push(['Después del corte: quedan para el periodo siguiente', money$(d.afterSum), d.after.length]);
+    // Movimientos: la deuda al inicio del periodo y los movimientos hasta el corte, con los montos como deuda.
+    // La suma de «Monto» es el utilizado al corte.
+    function movRow(m, i) {
+      var buy = m.type === 'c';
+      return [i, { v: excelDate(m.date), s: D }, { v: excelTime(m.time), s: T }, m.desc,
+        buy ? 'Compra' : m.type === 'g' ? 'Cargo' : 'Abono', buy ? WHO[m.who] : '', buy ? m.n : '', money$(uses(m))];
+    }
+    var head = [h('N°'), h('Fecha'), h('Hora'), h('Descripción'), h('Tipo'), h('Tarjeta'), h('Cuotas'), h('Monto')];
+    var mov = [head, ['', { v: excelDate(d.prev || sd), s: D }, d.prev ? '' : { v: excelTime(d.start.slice(11)), s: T }, startLabel(d), startLabel(d), '', '', money$(d.usedStart)]];
+    d.rows.forEach(function (m, i) { mov.push(movRow(m, i + 1)); });
+    var after = [head];
+    d.after.forEach(function (m, i) { after.push(movRow(m, i + 1)); });
     var cuo = [[h('Comercio'), h('Tarjeta'), h('Fecha de compra'), h('Monto total'), h('Cuotas'), h('Valor cuota'), h('Cuota 1 se paga en'), h('Última cuota'),
-      h('Pagadas'), h('Cuota de este mes'), h('Monto de este mes'), h('Cuotas después'), h('Monto después'), h('Estado')]];
-    q.active.concat(q.done).forEach(function (m) {
-      var st = cuotaState(m);
+      h('Pagadas'), h('Cuota de ' + mes), h('Monto de ' + mes), h('Cuotas después'), h('Monto después'), h('Estado')]];
+    items.forEach(function (m) {
+      if (m.type !== 'c' || m.n < 2 || m.date > d.corte) return;
+      var st = cuotaState(m, d.pay);
       cuo.push([m.desc, WHO[m.who], { v: excelDate(m.date), s: D }, money$(m.amount), m.n, money$(cuotaVal(m)), monthName(m.first), monthName(st.end),
         st.paid, st.now || '', money$(st.nowAmt), st.later, money$(st.laterAmt), st.paid >= m.n ? 'Terminada' : 'En curso']);
     });
@@ -1891,7 +2080,8 @@ body { font-size: 17px; line-height: 1.38; }
       { name: 'Resumen', xml: sheetXml(resumen, [52, 16, 11]) },
       { name: 'Movimientos', xml: sheetXml(mov, [6, 12, 8, 38, 14, 12, 8, 14], { freeze: true, filter: movRef }) }
     ];
-    if (cuo.length > 1) sheets.push({ name: 'Cuotas', xml: sheetXml(cuo, [34, 11, 15, 14, 8, 13, 19, 16, 9, 17, 18, 15, 15, 11], { freeze: true }) });
+    if (cuo.length > 1) sheets.push({ name: 'Cuotas', xml: sheetXml(cuo, [34, 11, 15, 14, 8, 13, 19, 16, 9, 20, 21, 15, 15, 11], { freeze: true }) });
+    if (after.length > 1) sheets.push({ name: 'Después del corte', xml: sheetXml(after, [6, 12, 8, 38, 14, 12, 8, 14], { freeze: true }) });
 
     var fmt$ = '&quot;$&quot;#,##0;\\-&quot;$&quot;#,##0';
     var styles = XML_HEAD + '<styleSheet xmlns="' + NS_MAIN + '"><numFmts count="2"><numFmt numFmtId="164" formatCode="' + fmt$ + '"/><numFmt numFmtId="165" formatCode="hh:mm"/></numFmts>' +
@@ -1933,8 +2123,9 @@ body { font-size: 17px; line-height: 1.38; }
   // Entrega el archivo: en el teléfono, por la hoja de compartir (guardar en Archivos, abrir en Excel, enviar);
   // en un computador, como descarga; dentro de Claude, a través de la app, que pide confirmación.
   async function exportExcel() {
-    var blob, name = 'Extracto Master ' + todayKey() + '.xlsx';
-    try { blob = buildXlsx(); } catch (e) { toast('No se pudo generar el archivo de Excel.'); return; }
+    var d = sheet && sheet.ex, blob, name = 'Extracto Master corte ' + (d ? d.corte : todayKey()) + '.xlsx';
+    if (!d) return;
+    try { blob = buildXlsx(d); } catch (e) { toast('No se pudo generar el archivo de Excel.'); return; }
     if (hasHost) {
       if (!saver) { toast('Aquí no se puede guardar el archivo. Usa la app instalada desde GitHub.', null, null, 5200); return; }
       try { await saver.save({ filename: name, data: blob }); toast('Extracto guardado en Excel'); }
@@ -1963,6 +2154,7 @@ body { font-size: 17px; line-height: 1.38; }
     else h += sheetMove(s);
     sheetEl.innerHTML = h;
     cuotaPreview();
+    if (s.mode === 'extract' && s.step !== 'view') periodPreview();
   }
 
   // Mantiene la hoja dentro del área visible cuando aparece el teclado del teléfono
@@ -1980,8 +2172,9 @@ body { font-size: 17px; line-height: 1.38; }
     opts = opts || {};
     sheet = { mode: m, id: id || null, del: false, testing: false, text: '',
       type: p ? p.type : opts.type || 'c', who: p && p.who ? p.who : 'T', n: opts.n || 1,
-      // Mes de la cuota 1: el guardado o, mientras no se toque, el mes siguiente a la fecha de la compra
-      first: p && p.first ? p.first : addMonths((p ? p.date : todayKey()).slice(0, 7), 1), firstAuto: !(p && p.first) };
+      // Mes de la cuota 1: el guardado o, mientras no se toque, el del extracto que incluye la compra
+      first: p && p.first ? p.first : firstFor(p ? p.date : todayKey()), firstAuto: !(p && p.first) };
+    if (m === 'extract') { sheet.step = 'pick'; sheet.corte = defaultCorte(); sheet.payAuto = true; sheet.pay = addMonths(sheet.corte.slice(0, 7), payOffset()); }
     renderSheet();
     sheetEl.hidden = false;
     document.documentElement.classList.add('lock');
@@ -2045,7 +2238,7 @@ body { font-size: 17px; line-height: 1.38; }
     if (!validDate(date) || !TIME_RE.test(time)) { setErr('Indica la fecha y la hora de esa deuda.'); return; }
     if (date + 'T' + time > todayKey() + 'T' + nowTime()) { setErr('La fecha de la deuda no puede ser futura.'); return; }
     var prev = cfg, first = !cfg.at;
-    var next = { debt: +d, at: date + 'T' + time, limit: +l, ignored: cfg.ignored };
+    var next = withCfg({ debt: +d, at: date + 'T' + time, limit: +l });
     busy = true;
     var ok = await commit([], [], next);
     busy = false;
@@ -2094,6 +2287,23 @@ body { font-size: 17px; line-height: 1.38; }
     if (a === 'widget-off') { await widgetOff(); closeSheet(); toast('Widget desactivado. Puedes quitarlo de la pantalla de inicio.'); return; }
     if (a === 'ext-copy') { copyText(sheet.text, 'Extracto copiado'); return; }
     if (a === 'ext-xlsx') { exportExcel(); return; }
+    if (a === 'ext-pick') { sheet.step = 'pick'; renderSheet(); return; }
+    if (a === 'pay-month') {
+      var pb = payBounds(), np = addMonths(sheet.pay, +b.getAttribute('data-d') < 0 ? -1 : 1);
+      sheet.pay = np < pb[0] ? pb[0] : np > pb[1] ? pb[1] : np;
+      sheet.payAuto = false;
+      periodPreview();
+      return;
+    }
+    if (a === 'ext-close') {
+      setCortes(cfg.cortes.concat(sheet.corte), 'Periodo siguiente iniciado el ' + fmt(nextDay(sheet.corte)) + '. Los movimientos posteriores al corte quedan en él.', 'Se deshizo el cierre del periodo.');
+      return;
+    }
+    if (a === 'ext-reopen') {
+      var rc = sheet.corte;
+      setCortes(cfg.cortes.filter(function (k) { return k !== rc; }), 'Periodo reabierto: se quitó el corte del ' + fmt(rc) + '.', 'Se volvió a cerrar el periodo.');
+      return;
+    }
     if (a === 'ext-share') {
       try { navigator.share({ title: 'Extracto Master', text: sheet.text }).catch(function () {}); } catch (e) { copyText(sheet.text, 'Extracto copiado'); }
       return;
@@ -2147,7 +2357,7 @@ body { font-size: 17px; line-height: 1.38; }
       if (!sheet.del) { sheet.del = true; b.textContent = 'Toca de nuevo para eliminar'; b.classList.add('armed'); return; }
       if (busy) return;
       var prev = cfg, next = null, snap = copyOf(p);
-      if (p.key) next = { debt: cfg.debt, at: cfg.at, limit: cfg.limit, ignored: cfg.ignored.filter(function (x) { return x !== p.key; }).concat(p.key).slice(-MAX_IGNORED) };
+      if (p.key) next = withCfg({ ignored: cfg.ignored.filter(function (x) { return x !== p.key; }).concat(p.key).slice(-MAX_IGNORED) });
       busy = true;
       var ok = await commit([], [p.id], next);
       busy = false;
@@ -2161,6 +2371,7 @@ body { font-size: 17px; line-height: 1.38; }
     if (sheet.mode === 'setup') saveSetup();
     else if (sheet.mode === 'box') connectBox();
     else if (sheet.mode === 'add' || sheet.mode === 'edit') saveMove();
+    else if (sheet.mode === 'extract' && sheet.step !== 'view') genExtract();
   });
 
   sheetEl.addEventListener('input', function (ev) {
@@ -2177,10 +2388,12 @@ body { font-size: 17px; line-height: 1.38; }
       cuotaPreview();
     } else if (t.id === 'f-paste') {
       pastePreview();
+    } else if (t.id === 'f-corte') {
+      corteInput();
     } else if (t.id === 'f-date' || t.id === 'f-time') {
       var n = document.getElementById('f-note'), msg = sheet && sheet.mode !== 'setup' ? anchorNote(val('f-date'), val('f-time')) : '';
       if (n) { n.textContent = msg; n.hidden = !msg; }
-      if (t.id === 'f-date' && sheet && sheet.firstAuto && validDate(t.value)) { sheet.first = addMonths(t.value.slice(0, 7), 1); cuotaPreview(); }
+      if (t.id === 'f-date' && sheet && sheet.firstAuto && validDate(t.value)) { sheet.first = firstFor(t.value); cuotaPreview(); }
     }
   });
 
@@ -2251,7 +2464,7 @@ body { font-size: 17px; line-height: 1.38; }
     if (busy) return;
     var snap = items.map(function (m) { return copyOf(m); }), prev = cfg;
     busy = true;
-    var ok = await commit([], snap.map(function (m) { return m.id; }), { debt: 0, at: '', limit: cfg.limit, ignored: [] });
+    var ok = await commit([], snap.map(function (m) { return m.id; }), withCfg({ debt: 0, at: '', ignored: [], cortes: [] }));
     busy = false;
     if (ok) toast('Datos borrados', 'Deshacer', function () { commit(snap, [], prev); }, 9000);
   }

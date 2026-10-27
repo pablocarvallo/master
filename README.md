@@ -12,7 +12,8 @@ Es un registro personal. No es la app oficial del banco ni está conectada a la 
 - **Compra, cargo y abono a mano**: cada compra y cada cargo (−) restan del disponible; cada abono (+) suma. Sirve para los cobros de la tarjeta (comisiones, intereses, seguros) y para los pagos o devoluciones.
 - **Compras en cuotas**: se ingresan con el monto total, el número de cuotas y el mes en que se paga la cuota 1. Una sección aparte muestra cada compra con sus cuotas pagadas, la cuota de este mes y las que vencen después. Una compra leída de un aviso se convierte en compra en cuotas al tocarla e indicar sus cuotas.
 - **Totales por tarjeta**: cuánto suman las compras del Titular y del Adicional, más los cargos y los abonos.
-- **Extracto**: un botón genera el detalle de todos los movimientos desde la deuda inicial, con el utilizado, las cuotas que vencen después y el total a pagar. Se copia como texto, se comparte o se exporta a Excel.
+- **Extracto al corte**: pide la fecha de corte del periodo de facturación y genera el detalle de los movimientos del periodo, con el utilizado al corte, las cuotas que vencen después y el total a pagar, para compararlo con el extracto del banco. Lo posterior al corte queda fuera y pasa al periodo siguiente. Se copia como texto, se comparte o se exporta a Excel.
+- **Periodos**: si el extracto coincide con el del banco, **Iniciar el periodo siguiente** guarda la fecha de corte. El periodo nuevo parte al día siguiente con los movimientos posteriores al corte, y «Por tarjeta» muestra solo ese periodo.
 - **Borrar un registro**: al tocar un movimiento se corrige o se elimina. Hay unos segundos para deshacer.
 - **Widget en la pantalla de inicio**: muestra el total a pagar de este mes y las tres últimas compras, sin abrir la app.
 - **Datos y respaldo**: copia todos los datos como texto y los restaura desde ahí.
@@ -24,19 +25,49 @@ Es un registro personal. No es la app oficial del banco ni está conectada a la 
 - Los movimientos anteriores a la fecha de la deuda inicial ya están dentro de ella: quedan como historial y no cambian el saldo.
 - **Total a pagar** = utilizado − cuotas que vencen después de este mes. Si no hay compras en cuotas, es igual al utilizado.
 - Una compra en cuotas ocupa el cupo por su monto total desde el día de la compra, igual que en el banco, y se libera con cada abono. Por eso el disponible calza con el del banco aunque el total a pagar sea menor.
-- Las cuotas se cuentan por mes calendario. La cuota 1 se paga en el mes indicado al anotar la compra (por omisión, el mes siguiente a la compra) y las demás, una por mes. Las de meses anteriores cuentan como pagadas, la de este mes entra en el total a pagar y las de meses siguientes quedan fuera hasta que llegue su mes.
+- Las cuotas se cuentan por mes calendario. La cuota 1 se paga en el mes indicado al anotar la compra (por omisión, el del extracto que incluye la compra, ver más abajo) y las demás, una por mes. Las de meses anteriores cuentan como pagadas, la de este mes entra en el total a pagar y las de meses siguientes quedan fuera hasta que llegue su mes.
 - Ejemplo: una compra en 2 cuotas con la cuota 1 en octubre. En octubre, el total a pagar incluye la cuota 1 y deja fuera la cuota 2, que entra en noviembre.
 - Las cuotas no se marcan a mano y no cambian el saldo. El disponible sube cuando se anota el abono.
 - El valor de cada cuota es el total dividido en partes iguales, sin intereses. Si la compra tiene interés, conviene ingresar como monto total lo que se va a pagar en total.
 - Una compra en cuotas anterior a la deuda inicial se anota con su fecha real: queda como historial, no cambia el saldo y sus cuotas futuras igual se descuentan del total a pagar.
 
+## Extracto al corte
+
+El banco cierra el periodo de facturación en la **fecha de corte** y envía el extracto varios días después. Las compras de esos días ya no entran en ese extracto: van al periodo siguiente. Para comparar con lo que envía el banco, **Generar extracto** primero pide:
+
+- **Fecha de corte**: el día en que cierra el periodo. Ese día entra completo. Sugiere un mes después del último corte guardado o, si ese día aún no llega, hoy.
+- **El extracto se paga en**: el mes en que se paga ese extracto, el mismo del corte o hasta dos meses después. De las compras en cuotas, entran en el total las cuotas que se pagan hasta ese mes. La app recuerda la elección.
+
+Antes de generarlo, muestra el periodo, cuántos movimientos tiene, el total a pagar y cuántos movimientos posteriores al corte quedan fuera.
+
+El extracto muestra:
+
+- La deuda al inicio del periodo: la deuda inicial en el primer periodo y, después, la deuda al corte anterior.
+- Los movimientos del periodo, desde el día siguiente al corte anterior (o desde la deuda inicial) hasta la fecha de corte.
+- **Utilizado al corte** = deuda al inicio del periodo + compras + cargos − abonos del periodo.
+- **Total a pagar** = utilizado al corte − cuotas que vencen después del mes de pago.
+- **Después del corte**: los movimientos posteriores, que no entran en este extracto y quedan para el periodo siguiente.
+
+### Iniciar el periodo siguiente
+
+Si el extracto coincide con el del banco, **Iniciar el periodo siguiente** guarda la fecha de corte:
+
+- El periodo nuevo parte al día siguiente del corte y lleva los movimientos posteriores. El próximo extracto parte desde ahí, con la deuda al corte como saldo inicial.
+- «Por tarjeta» muestra solo el periodo abierto, y el listado de movimientos marca cada corte.
+- El disponible no cambia: el cupo se sigue calculando con todos los movimientos.
+- Con un corte guardado, el mes de la cuota 1 de una compra nueva sale del día del corte. Por ejemplo, con corte el día 20 y pago el mismo mes, una compra del 12 de octubre paga la cuota 1 en octubre y una del 25 de octubre, en noviembre.
+- Un periodo cerrado se puede volver a ver con su fecha de corte, y **Reabrir este periodo** quita el corte.
+
+El total a pagar de la pantalla principal y del widget se sigue calculando con todos los movimientos y las cuotas de este mes.
+
 ## Exportar el extracto a Excel
 
-En el extracto, **Exportar a Excel** genera el archivo `Extracto Master aaaa-mm-dd.xlsx` con tres hojas:
+En el extracto, **Exportar a Excel** genera el archivo `Extracto Master corte aaaa-mm-dd.xlsx`, con la fecha de corte en el nombre, y estas hojas:
 
-- **Resumen**: cupo, utilizado, disponible y total a pagar, más el detalle que lleva de la deuda inicial al total (compras del Titular y del Adicional, cargos, abonos y cuotas que vencen después).
-- **Movimientos**: una fila por movimiento, con número, fecha, hora, descripción, tipo, tarjeta, cuotas y monto. Los montos van como deuda (compras y cargos en positivo, abonos en negativo), así que la suma de la columna es el utilizado. Trae filtros y la primera fila fija.
-- **Cuotas**: una fila por compra en cuotas, con el valor de la cuota, el mes de la primera y de la última, las pagadas, la de este mes y las que vencen después. Solo aparece si hay compras en cuotas.
+- **Resumen**: fecha de corte, periodo y mes de pago; cupo, utilizado al corte, disponible al corte y total a pagar, más el detalle que lleva de la deuda al inicio del periodo al total (compras del Titular y del Adicional, cargos, abonos y cuotas que vencen después).
+- **Movimientos**: la deuda al inicio del periodo y una fila por movimiento del periodo, con número, fecha, hora, descripción, tipo, tarjeta, cuotas y monto. Los montos van como deuda (compras y cargos en positivo, abonos en negativo), así que la suma de la columna es el utilizado al corte. Trae filtros y la primera fila fija.
+- **Cuotas**: una fila por compra en cuotas hasta el corte, con el valor de la cuota, el mes de la primera y de la última, las pagadas, la del mes de pago y las que vencen después. Solo aparece si hay compras en cuotas.
+- **Después del corte**: los movimientos posteriores al corte, que quedan para el periodo siguiente. Solo aparece si los hay.
 
 En el iPhone el archivo se entrega por la hoja de compartir, para guardarlo en Archivos, abrirlo en Excel o Numbers, o enviarlo. En un computador se descarga. El archivo se arma en el dispositivo, sin conexión y sin enviar los datos a ningún servicio.
 
@@ -175,7 +206,7 @@ Se abre como app independiente, con su icono, y funciona sin conexión.
 Los movimientos y la deuda quedan en el `localStorage` del navegador, en el dispositivo. Este repositorio solo contiene el código de la app. Los correos del banco pasan por el buzón, que es un repositorio privado aparte.
 
 - `master-movimientos`: cada movimiento con tipo (`c` compra, `g` cargo, `a` abono), fecha (`date`), hora (`time`), descripción (`desc`), monto en pesos (`amount`), origen (`mail` o `manual`), tarjeta (`who`: `T` titular o `A` adicional; `card`: los cuatro dígitos del aviso), número de cuotas (`n`), mes en que se paga la cuota 1 (`first`, como `aaaa-mm`) y, en las compras leídas de un aviso, la clave que evita duplicados (`key`).
-- `master-tarjeta`: la deuda inicial (`debt`), desde cuándo rige (`at`), el cupo (`limit`) y los avisos eliminados a propósito (`ignored`).
+- `master-tarjeta`: la deuda inicial (`debt`), desde cuándo rige (`at`), el cupo (`limit`), los avisos eliminados a propósito (`ignored`), las fechas de corte de los periodos cerrados (`cortes`) y cuántos meses después del corte se paga el extracto (`payOff`).
 - `master-preferencias`: orden del listado, repositorio y token del buzón, momento de la última lectura y si el widget está activado.
 
 ## Icono
