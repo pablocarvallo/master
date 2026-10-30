@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Master</title>
 <!--STANDALONE:START-->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -178,6 +178,8 @@ body {
 }
 
 /*DS:TOKENS:END*/html.lock { overflow: hidden; }
+/* Sin zoom con los dedos ni con doble toque: la app se usa como app instalada, no como página */
+html { touch-action: pan-x pan-y; }
 [hidden]:not([hidden=until-found i]) { display: none !important; }
 body {
   margin: 0;
@@ -210,6 +212,7 @@ svg { display: block; }
   font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-align: center; cursor: pointer;
 }
 .btn:active { opacity: 0.85; }
+a.btn { text-decoration: none; }
 .btn:disabled { opacity: 0.45; cursor: default; }
 .btn.primary { background: var(--accent); color: var(--on-accent); }
 .btn.tonal { background: var(--accent-bg); color: var(--ink); }
@@ -378,7 +381,7 @@ svg { display: block; }
 .backup summary { min-height: 48px; display: flex; align-items: center; font-weight: 600; cursor: pointer; }
 .backup[open] { padding-bottom: 16px; }
 .backup > *:not(summary) { margin-top: 10px; }
-.backup textarea, .field textarea { width: 100%; box-sizing: border-box; border: 1.5px solid var(--line); border-radius: 12px; background: var(--bg); padding: 10px 12px; font-size: 14px; resize: vertical; }
+.backup textarea, .field textarea { width: 100%; box-sizing: border-box; border: 1.5px solid var(--line); border-radius: 12px; background: var(--bg); padding: 10px 12px; font-size: 16px; resize: vertical; }
 .backup textarea { font-family: ui-monospace, Menlo, monospace; }
 .bk-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .bk-actions .btn { flex: 1; min-width: 0; min-height: 48px; }
@@ -680,6 +683,7 @@ body { font-size: 17px; line-height: 1.38; }
   var WIDGET_CODE = /*WIDGET:START*/"// Variables used by Scriptable.\n// These must be at the very top of the file. Do not edit.\n// icon-color: orange; icon-glyph: credit-card;\n\n// Master · widget para la pantalla de inicio del iPhone (app Scriptable)\n//\n// Muestra el disponible, el utilizado y las tres últimas compras con la tarjeta. Parte de lo que Master publica\n// en el buzón (el repositorio privado de GitHub) y le suma las compras que llegaron después, aunque no hayas\n// abierto Master. No copies este archivo a mano: usa el botón «Copiar el script del widget» de Master, que\n// completa las dos líneas siguientes con tu repositorio y tu token.\nconst REPO = '__REPO__';\nconst TOKEN = '__TOKEN__';\n\nconst API = 'https://api.github.com/repos/' + REPO;\nconst MS_TITLE = 'Master · widget';\nconst MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];\n\n/* ---------- Formatos y fechas ---------- */\nfunction pad(n) { return (n < 10 ? '0' : '') + n; }\nfunction dayKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }\nfunction dots(n) { return String(Math.round(Math.abs(n))).replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.'); }\nfunction money(n) { return (n < 0 ? '−' : '') + '$' + dots(n); }\nfunction hm(d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()); }\nfunction dayLabel(k) {\n  const t = new Date(), y = new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1);\n  if (k === dayKey(t)) return 'hoy';\n  if (k === dayKey(y)) return 'ayer';\n  const p = k.split('-');\n  return (+p[2]) + ' ' + MES[+p[1] - 1];\n}\nfunction validDate(k) {\n  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(k)) return false;\n  const p = k.split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));\n  return d.getUTCFullYear() === +p[0] && d.getUTCMonth() === +p[1] - 1 && d.getUTCDate() === +p[2];\n}\n\n/* ---------- Lector de los avisos del banco (el mismo de Master) ---------- */\nconst CP1252 = { 0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84, 0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02c6: 0x88, 0x2030: 0x89, 0x0160: 0x8a,\n  0x2039: 0x8b, 0x0152: 0x8c, 0x017d: 0x8e, 0x2018: 0x91, 0x2019: 0x92, 0x201c: 0x93, 0x201d: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97, 0x02dc: 0x98,\n  0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b, 0x0153: 0x9c, 0x017e: 0x9e, 0x0178: 0x9f };\nfunction contByte(ch) { let c = ch.charCodeAt(0); if (c > 0xff) c = CP1252[c] || 0; return c >= 0x80 && c <= 0xbf ? c : -1; }\nfunction demojibake(s) {\n  if (!/[ÂÃâ]/.test(s)) return s;\n  return s.replace(/[ÂÃ][^\\x00-\\x7f]|â[^\\x00-\\x7f]{2}/g, function (seq) {\n    const b1 = contByte(seq.charAt(1)), b2 = seq.length > 2 ? contByte(seq.charAt(2)) : 0;\n    if (b1 < 0 || b2 < 0) return seq;\n    return String.fromCharCode(seq.length > 2 ? (0x2 << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f) : ((seq.charCodeAt(0) & 0x1f) << 6) | (b1 & 0x3f));\n  });\n}\nconst ENT = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '\"', apos: \"'\", dollar: '$', aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú',\n  Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú', ntilde: 'ñ', Ntilde: 'Ñ', uuml: 'ü', Uuml: 'Ü', iexcl: '¡', iquest: '¿', ordf: 'ª', ordm: 'º',\n  deg: '°', middot: '·', laquo: '«', raquo: '»', ndash: '–', mdash: '—', hellip: '…', copy: '©', reg: '®' };\nfunction plainText(s) {\n  s = String(s == null ? '' : s);\n  if (s.length > 400000) s = s.slice(-400000);\n  s = demojibake(s);\n  if (s.normalize) s = s.normalize('NFC');\n  if (/<[a-z!\\/][^>]*>/i.test(s)) s = s.replace(/<(script|style)\\b[\\s\\S]*?<\\/\\1>/gi, ' ').replace(/<[^>]+>/g, ' ');\n  s = s.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, function (all, e) {\n    if (e.charAt(0) === '#') {\n      const c = e.charAt(1).toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);\n      return c > 0 && c < 0x10000 ? String.fromCharCode(c) : ' ';\n    }\n    return Object.prototype.hasOwnProperty.call(ENT, e) ? ENT[e] : all;\n  });\n  return s.replace(/[\\s\\xa0\\u200b-\\u200d\\ufeff]+/g, ' ');\n}\nfunction clean(s) { return String(s == null ? '' : s).replace(/\\s+/g, ' ').trim().slice(0, 60); }\nfunction skel(key) {\n  const p = String(key).split('|');\n  return p[0] + '|' + (p[1] || '') + '|' + p.slice(2).join('').toUpperCase().replace(/[^A-Z0-9]/g, '');\n}\n// Devuelve las compras con la tarjeta que trae un texto. Manda la terminación de la tarjeta; quedan fuera las\n// compras con cargo a la cuenta (las registra FAN), las que son en dólares y las de otra tarjeta.\nfunction parseMail(raw, cards) {\n  const text = plainText(raw);\n  const re = /compra(?:\\W{1,4}en\\W{1,4}(?:(\\d{1,2})\\W{1,4})?cuotas?)?\\W{1,4}por\\W{1,4}?(US\\$|USD|\\$)?\\W{0,3}?([\\d.]+(?:,\\d{1,2})?)(?:\\W{1,4}en\\W{1,4}(\\d{1,2})\\W{1,4}cuotas?)?\\W{1,4}con\\W{1,4}(?:cargo\\W{1,4}a\\W{1,4})?(.{1,60}?)\\s+en\\s+(.{1,80}?)\\s+el\\s+(\\d{1,2})[\\/-](\\d{1,2})[\\/-](\\d{4})(?:\\W{1,4}a\\W{1,4}las)?\\W{1,4}(\\d{1,2}):(\\d{2})/gi;\n  const out = [];\n  let m;\n  while ((m = re.exec(text))) {\n    const cur = (m[2] || '$').toUpperCase(), medio = clean(m[5]), merchant = clean(m[6]);\n    const amount = parseInt(m[3].replace(/\\./g, '').replace(/,.*$/, ''), 10);\n    const date = m[9] + '-' + pad(+m[8]) + '-' + pad(+m[7]), time = pad(+m[10]) + ':' + m[11];\n    if (!validDate(date) || !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time) || !merchant || !(amount > 0)) continue;\n    const card = (/(\\d{4})\\D{0,2}$/.exec(medio) || [])[1] || '';\n    if ((/cuenta/i.test(medio) && !/tarjeta/i.test(medio)) || cur !== '$' || !cards[card]) continue;\n    const n = +(m[1] || m[4] || 1);\n    out.push({ d: date, h: time, c: merchant, m: amount, w: cards[card], n: n >= 1 && n <= 60 ? n : 1,\n      key: date + 'T' + time + '|' + amount + '|' + merchant.toUpperCase() + '|' + card });\n  }\n  return out;\n}\n\n/* ---------- Datos ---------- */\nasync function gh(path) {\n  const r = new Request(API + path);\n  r.headers = { Authorization: 'Bearer ' + TOKEN, Accept: 'application/vnd.github+json' };\n  r.timeoutInterval = 20;\n  const data = await r.loadJSON();\n  const code = r.response && r.response.statusCode;\n  if (code && code >= 400) { const e = new Error('GitHub ' + code); e.status = code; throw e; }\n  return data;\n}\nfunction cachePath() { const fm = FileManager.local(); return fm.joinPath(fm.documentsDirectory(), 'master-widget.json'); }\nfunction readCache() {\n  try { const fm = FileManager.local(), p = cachePath(); return fm.fileExists(p) ? JSON.parse(fm.readString(p)) : null; } catch (e) { return null; }\n}\nfunction writeCache(res) { try { FileManager.local().writeString(cachePath(), JSON.stringify(res)); } catch (e) {} }\n\n// Lo publicado por Master + las compras que llegaron al buzón después de la última vez que Master lo leyó\nasync function load() {\n  const list = await gh('/milestones?state=all&per_page=100');\n  const ms = (Array.isArray(list) ? list : []).filter(function (x) { return x && x.title === MS_TITLE; })[0];\n  let st = null;\n  try { st = ms && ms.description ? JSON.parse(ms.description) : null; } catch (e) { st = null; }\n  if (!st || st.app !== 'master') return { msg: 'Abre Master y activa el widget en «Buzón y atajo».' };\n  if (typeof st.used !== 'number') return { msg: 'Abre Master e ingresa el cupo y el utilizado.' };\n\n  // Las compras anteriores a este día ya están dentro del saldo anterior\n  const desde = /^\\d{4}-\\d{2}-\\d{2}$/.test(String(st.desde || '')) ? st.desde : String(st.at || '').slice(0, 10);\n  const known = {}, nuevas = [];\n  (st.keys || []).forEach(function (k) { known[k] = 1; });\n  const cards = st.cards && typeof st.cards === 'object' ? st.cards : {};\n  if (st.read > 0) {   // sin una lectura previa de Master no hay desde dónde contar lo nuevo\n    const since = '&since=' + encodeURIComponent(new Date(st.read - 30 * 60000).toISOString().replace(/\\.\\d+Z$/, 'Z'));\n    for (let page = 1; page <= 3; page++) {\n      const issues = await gh('/issues?state=all&sort=created&direction=asc&per_page=100&page=' + page + since);\n      if (!Array.isArray(issues)) break;\n      issues.forEach(function (it) {\n        if (!it || it.pull_request) return;\n        const title = String(it.title || '');\n        parseMail((title.length > 20 ? title + '\\n' : '') + String(it.body || ''), cards).forEach(function (f) {\n          const sk = skel(f.key);\n          if (known[sk]) return;\n          known[sk] = 1;\n          if (desde && f.d < desde) return;\n          nuevas.push(f);\n        });\n      });\n      if (issues.length < 100) break;\n    }\n  }\n  let used = st.used;\n  nuevas.forEach(function (f) { used += f.m; });\n  const limit = typeof st.limit === 'number' && st.limit > 0 ? st.limit : 0;\n  const buys = (st.ult || []).concat(nuevas).filter(function (b) { return b && b.d && b.m > 0; })\n    .sort(function (a, b) { return (a.d + 'T' + (a.h || '')) < (b.d + 'T' + (b.h || '')) ? 1 : -1; }).slice(0, 3)\n    .map(function (b) { return { d: b.d, h: String(b.h || ''), c: String(b.c || 'Compra'), m: b.m, w: b.w === 'A' ? 'A' : 'T' }; });\n  return { avail: limit - used, used: used, limit: limit, buys: buys, nuevas: nuevas.length, at: Date.now() };\n}\n\n/* ---------- Dibujo ---------- */\nconst WHITE = new Color('#ffffff'), AMBER = new Color('#BDEBFB'), TIT = new Color('#DCE6FF'), ADI = new Color('#7FD3F5');\nfunction label(stack, str, size, color, opacity, bold) {\n  const t = stack.addText(str);\n  t.font = bold ? Font.boldSystemFont(size) : Font.systemFont(size);\n  t.textColor = color || WHITE;\n  if (opacity) t.textOpacity = opacity;\n  t.lineLimit = 1;\n  return t;\n}\nfunction build(res, family) {\n  const w = new ListWidget();\n  const lock = String(family || '').indexOf('accessory') === 0;\n  const small = family === 'small';\n  if (lock) {\n    // Pantalla bloqueada: disponible y última compra\n    label(w, res.msg ? 'Master' : 'Disp. ' + money(res.avail), 14, null, 0, true).minimumScaleFactor = 0.6;\n    if (res.msg) label(w, res.msg, 11).lineLimit = 2;\n    else if (res.buys.length) label(w, res.buys[0].c + ' ' + money(res.buys[0].m), 11).minimumScaleFactor = 0.7;\n    return w;\n  }\n  const g = new LinearGradient();\n  g.colors = [new Color('#4D78F3'), new Color('#2141D6')];\n  g.locations = [0, 1];\n  g.startPoint = new Point(0, 0);\n  g.endPoint = new Point(1, 1);\n  w.backgroundGradient = g;\n  w.setPadding(small ? 12 : 14, small ? 12 : 16, small ? 10 : 12, small ? 12 : 16);\n\n  const head = w.addStack();\n  head.layoutHorizontally();\n  head.centerAlignContent();\n  label(head, 'DISPONIBLE', small ? 9 : 10, AMBER, 0, true);\n  head.addSpacer();\n  if (res.at) label(head, (res.old ? 'sin conexión · ' : '') + hm(new Date(res.at)), 9, WHITE, 0.6);\n  w.addSpacer(2);\n\n  if (res.msg) {\n    const t = label(w, res.msg, small ? 12 : 14, WHITE, 0.9);\n    t.lineLimit = 4;\n    w.addSpacer();\n    return w;\n  }\n  const total = label(w, money(res.avail), small ? 22 : 28, WHITE, 0, true);\n  total.minimumScaleFactor = 0.5;\n  const sub = label(w, 'Utilizado ' + money(res.used), small ? 10 : 12, WHITE, 0.75);\n  sub.minimumScaleFactor = 0.7;\n  w.addSpacer(small ? 4 : 8);\n\n  if (!res.buys.length) label(w, 'Aún no hay compras', 12, WHITE, 0.7);\n  res.buys.slice(0, small ? 2 : 3).forEach(function (b, i) {\n    if (i) w.addSpacer(small ? 2 : 4);\n    const row = w.addStack();\n    row.layoutHorizontally();\n    row.centerAlignContent();\n    if (!small) { label(row, dayLabel(b.d) + (b.h ? ' ' + b.h : ''), 10, WHITE, 0.6); row.addSpacer(6); }\n    label(row, b.w, small ? 9 : 10, b.w === 'A' ? ADI : TIT, 0, true);       // T: titular · A: adicional\n    row.addSpacer(4);\n    label(row, b.c, small ? 10 : 12, WHITE, 0.95);\n    row.addSpacer();\n    label(row, money(b.m), small ? 10 : 12, WHITE, 0, true);\n  });\n  w.addSpacer();\n  return w;\n}\n\n/* ---------- Ejecución ---------- */\nlet res;\nif (/^__/.test(TOKEN) || /^__/.test(REPO)) {\n  res = { msg: 'Copia este script desde Master, con el botón «Copiar el script del widget».' };\n} else {\n  try {\n    res = await load();\n    if (!res.msg) writeCache(res);\n  } catch (e) {\n    const c = readCache();\n    if (c && !c.msg && typeof c.avail === 'number') { res = c; res.old = true; }\n    else res = { msg: e && e.status === 401 ? 'El token venció. Copia de nuevo el script desde Master.' : 'No se pudo leer el buzón. Revisa la conexión.' };\n  }\n}\nconst widget = build(res, config.widgetFamily);\nwidget.refreshAfterDate = new Date(Date.now() + 10 * 60 * 1000);\nif (config.runsInWidget) Script.setWidget(widget);\nelse await widget.presentMedium();\nScript.complete();\n"/*WIDGET:END*/;
   // Si la app está en GitHub Pages, el buzón se sugiere en la misma cuenta
   var OWNER = /\.github\.io$/i.test(location.hostname) ? location.hostname.split('.')[0] : '';
+  var APP_URL = 'https://pablocarvallo.github.io/master/';   // la app instalada, que lee el buzón y alimenta el widget
   var DIG = {};
   Object.keys(CARDS).forEach(function (d) { if (!DIG[CARDS[d]]) DIG[CARDS[d]] = d; });
 
@@ -1347,7 +1351,7 @@ body { font-size: 17px; line-height: 1.38; }
     keepBoxNotes(box); savePrefs();
     var r = await addParsed(box.parsed, 'box');
     syncing = false; syncErr = ''; lastTry = Date.now();
-    openSheet('box');   // ahora muestra el estado del buzón y la automatización de Atajos
+    openSheet('box', null, { widget: sheet && sheet.widget });   // ahora muestra el estado del buzón, la automatización de Atajos y el widget
     render();
     toast('Buzón conectado. ' + (r.added || r.linked ? addedMsg(r, box.parsed) : box.parsed.found.length ? 'Sus compras ya estaban registradas.' : 'Aún no tiene avisos de la tarjeta: llegarán con tu próxima compra.'), null, null, 6500);
   }
@@ -1455,14 +1459,15 @@ body { font-size: 17px; line-height: 1.38; }
       '<button class="btn ghost big" data-act="add" data-t="g" aria-label="Anotar un cargo: resta del disponible">' + I_MINUS + 'Cargo</button>' +
       '<button class="btn plus big" data-act="add" data-t="a" aria-label="Anotar un abono o pago: suma al disponible">' + I_PLUS + 'Abono</button></div>';
     if (!canSync) {
-      h += '<p class="sync plain">Aquí las compras se agregan pegando el aviso. La lectura automática funciona en la app instalada desde GitHub.</p>';
+      h += '<p class="sync plain">Aquí las compras se agregan pegando el aviso. La lectura automática y el widget funcionan en la app instalada desde GitHub.</p>' +
+        '<div class="under"><button class="linkbtn" data-act="away">Buzón y widget</button></div>';
     } else if (prefs.repo) {
       if (syncing) h += '<div class="sync busy" role="status"><i></i><span>Leyendo el buzón de avisos…</span></div>';
       else if (syncErr) h += '<div class="sync bad" role="status"><i></i><span>' + errMsg(syncErr) + '</span></div>';
       else h += '<div class="sync"><i></i><span>Buzón conectado · ' + (prefs.last ? 'leído ' + ago(prefs.last) : 'aún sin leer') + '</span></div>';
-      h += '<div class="under"><button class="linkbtn" data-act="paste">Pegar un aviso</button><button class="linkbtn" data-act="box">Buzón y atajo</button></div>';
+      h += '<div class="under"><button class="linkbtn" data-act="paste">Pegar un aviso</button><button class="linkbtn" data-act="box">Buzón y atajo</button><button class="linkbtn" data-act="widget">Widget</button></div>';
     } else {
-      h += '<div class="under"><button class="linkbtn" data-act="paste">Pegar un aviso</button></div>';
+      h += '<div class="under"><button class="linkbtn" data-act="paste">Pegar un aviso</button><button class="linkbtn" data-act="widget">Widget</button></div>';
     }
     return h;
   }
@@ -1805,7 +1810,7 @@ body { font-size: 17px; line-height: 1.38; }
         '<p class="note"><strong>La automatización de Atajos es la misma de FAN.</strong> Debe filtrar solo por el remitente del banco, sin condición de asunto: así envía al buzón todos los correos, y FAN toma las compras de la cuenta y esta app, las de la tarjeta.</p>' +
         '<details class="fold"><summary>Crear la automatización desde cero</summary>' +
         '<p class="muted fine">Se crea una sola vez. Envía al buzón cada correo del banco apenas llega a Mail.</p>' + atajoGuide() + '</details>' +
-        '<details class="fold" id="f-widget"' + (prefs.widget ? ' open' : '') + '><summary>Widget en la pantalla de inicio</summary>' +
+        '<details class="fold" id="f-widget"' + (prefs.widget || sheet.widget ? ' open' : '') + '><summary>Widget en la pantalla de inicio</summary>' +
         '<p class="muted fine">Muestra el disponible, el utilizado y las tres últimas compras. Se hace con la app gratuita Scriptable, porque una app web no puede crear widgets por sí sola.</p>' +
         '<ol class="guide">' +
         '<li><div>Instala <strong>Scriptable</strong> desde el App Store.</div></li>' +
@@ -1828,6 +1833,7 @@ body { font-size: 17px; line-height: 1.38; }
     return '<form class="panel" id="sheet-form" novalidate role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">' +
       '<h2 id="sheet-title">Conectar el buzón</h2>' +
       '<p class="sub">El buzón es un repositorio privado de tu GitHub. Atajos deja ahí cada correo del banco y la app toma las compras con tarjeta de crédito al abrirse.</p>' +
+      (sheet.widget ? '<p class="note"><strong>El widget usa el buzón.</strong> Conéctalo aquí: después, en esta misma hoja, aparece «Widget en la pantalla de inicio» con el botón para copiar el script.</p>' : '') +
       (fan ? '<p class="note"><strong>Encontré el buzón de FAN en este dispositivo</strong> y completé los datos. Toca «Probar y conectar».</p>'
            : '<p class="note"><strong>Si ya usas FAN, el buzón es el mismo.</strong> Abre FAN, entra a «Buzón y atajo», toca «Copiar autorización» y pega ese texto aquí como token.</p>') +
       '<label class="field"><span>Repositorio del buzón</span><input type="text" id="f-repo" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="next" placeholder="' + (OWNER || 'tu-usuario') + '/' + BOX + '" value="' + esc(repoV) + '"></label>' +
@@ -1842,6 +1848,20 @@ body { font-size: 17px; line-height: 1.38; }
       '<p class="err" id="f-err" role="alert" hidden></p>' +
       '<div class="stack"><button type="submit" class="btn primary block" id="f-connect">Probar y conectar</button>' +
       '<button type="button" class="btn ghost block" data-act="cancel">Cancelar</button></div></form>';
+  }
+
+  // Dentro de Claude no hay buzón ni widget: se explica dónde están
+  function sheetAway() {
+    return '<div class="panel" id="sheet-form" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">' +
+      '<h2 id="sheet-title">Buzón y widget</h2>' +
+      '<p class="sub">Dentro de Claude esta página no puede leer el buzón de GitHub ni publicar los datos del widget. Eso se hace en la app Master instalada en el iPhone.</p>' +
+      '<ol class="guide">' +
+      '<li><div>En el iPhone, abre Master desde la pantalla de inicio. Si no la tienes, abre la dirección en <strong>Safari</strong> y toca <strong>Compartir → Añadir a pantalla de inicio</strong>.<br><a class="btn tonal small" href="' + APP_URL + '" target="_blank" rel="noopener">Abrir Master</a></div></li>' +
+      '<li><div>Toca <strong>Widget</strong>, bajo los botones de arriba. Si el buzón no está conectado, conéctalo primero.</div></li>' +
+      '<li><div>Toca <strong>Copiar el script del widget</strong> y pégalo en Scriptable.</div></li>' +
+      '</ol>' +
+      '<p class="note">Los datos de esta página y los de la app instalada están guardados por separado. El widget muestra los de la app instalada.</p>' +
+      '<div class="stack"><button type="button" class="btn ghost block" data-act="cancel">Cerrar</button></div></div>';
   }
 
   /* ---------- Extracto ---------- */
@@ -2106,6 +2126,7 @@ body { font-size: 17px; line-height: 1.38; }
     else if (s.mode === 'box') h += sheetBox();
     else if (s.mode === 'extract') h += sheetExtract(s);
     else if (s.mode === 'purge') h += sheetPurge();
+    else if (s.mode === 'away') h += sheetAway();
     else h += sheetMove(s);
     sheetEl.innerHTML = h;
     cuotaPreview();
@@ -2125,7 +2146,7 @@ body { font-size: 17px; line-height: 1.38; }
     if (m === 'edit' && !p) return;
     if ((m === 'extract' || m === 'purge') && !cfg.desde) return;
     opts = opts || {};
-    sheet = { mode: m, id: id || null, del: false, testing: false, text: '',
+    sheet = { mode: m, id: id || null, del: false, testing: false, text: '', widget: !!opts.widget,
       type: p ? p.type : opts.type || 'c', who: p && p.who ? p.who : 'T', n: opts.n || 1,
       // Mes de la facturación que cobra la (próxima) cuota: el guardado o, mientras no se toque, el sugerido por la fecha
       prox: p && p.prox ? p.prox : proxFor(p ? p.date : todayKey()), proxAuto: !(p && p.prox) };
@@ -2137,6 +2158,7 @@ body { font-size: 17px; line-height: 1.38; }
     var target = document.getElementById(m === 'add' ? 'f-amount' : m === 'setup' ? 'f-used' : m === 'paste' ? 'f-paste' : 'sheet-form');
     if (target) target.focus();
     if (m === 'box' && prefs.repo && canSync) loadMails();
+    if (opts.widget) { var wd = document.getElementById(prefs.repo ? 'f-widget' : 'f-repo'); if (wd && wd.scrollIntoView) wd.scrollIntoView({ block: 'start' }); }
   }
   function closeSheet() {
     sheet = null; sheetEl.hidden = true; sheetEl.innerHTML = '';
@@ -2341,6 +2363,9 @@ body { font-size: 17px; line-height: 1.38; }
   });
 
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && sheet && !busy && !sheet.testing) closeSheet(); });
+  // Sin zoom con los dedos: Safari en iPhone no siempre respeta «user-scalable=no», así que se cortan sus gestos de zoom
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (t) { document.addEventListener(t, function (ev) { ev.preventDefault(); }, { passive: false }); });
+  document.addEventListener('touchmove', function (ev) { if (ev.touches && ev.touches.length > 1) ev.preventDefault(); }, { passive: false });
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', fitSheet);
     window.visualViewport.addEventListener('scroll', fitSheet);
@@ -2357,6 +2382,8 @@ body { font-size: 17px; line-height: 1.38; }
     else if (a === 'setup') openSheet('setup');
     else if (a === 'paste') openSheet('paste');
     else if (a === 'box') openSheet('box');
+    else if (a === 'widget') openSheet('box', null, { widget: true });
+    else if (a === 'away') openSheet('away');
     else if (a === 'extract') openSheet('extract');
     else if (a === 'purge') openSheet('purge');
     else if (a === 'sync') syncBox(true);

@@ -156,7 +156,7 @@ El botón **Copiar este detalle** copia la lista con el texto de cada correo, pa
 Muestra el disponible, el utilizado y las tres últimas compras, cada una con una **T** (Titular) o una **A** (Adicional). Una app web no puede crear widgets en iPhone, así que el widget se hace con **Scriptable**, una app gratuita que dibuja widgets a partir de un script.
 
 1. Instala **Scriptable** desde el App Store.
-2. En Master, entra a **Buzón y atajo → Widget en la pantalla de inicio** y toca **Copiar el script del widget**. El script va completo, con el buzón y el token.
+2. En Master, toca **Widget**, bajo los botones de arriba (o entra a **Buzón y atajo → Widget en la pantalla de inicio**), y toca **Copiar el script del widget**. El script va completo, con el buzón y el token. Si el buzón no está conectado, la misma hoja pide conectarlo primero. Dentro de Claude no hay buzón ni widget: se copia desde la app instalada en el iPhone.
 3. Abre Scriptable, toca **+** y pega el script. Nómbralo **Master** y ejecútalo con **▶**: debe mostrar el disponible.
 4. En la pantalla de inicio, mantén presionado un espacio vacío, toca **Editar → Agregar widget**, busca **Scriptable** y elige el tamaño mediano.
 5. Mantén presionado el widget nuevo, toca **Editar widget** y en **Script** elige **Master**.
@@ -178,7 +178,7 @@ Cómo funciona:
 2. Abre esa dirección en **Safari** en el iPhone.
 3. Toca **Compartir → Añadir a pantalla de inicio**.
 
-Se abre como app independiente, con su icono, y funciona sin conexión.
+Se abre como app independiente, con su icono, y funciona sin conexión. No se agranda con los dedos ni con doble toque.
 
 ## Archivos
 
