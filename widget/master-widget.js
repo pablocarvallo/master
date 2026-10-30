@@ -4,7 +4,7 @@
 
 // Master · widget para la pantalla de inicio del iPhone (app Scriptable)
 //
-// Muestra el total a pagar de este mes y las tres últimas compras con la tarjeta. Parte de lo que Master publica
+// Muestra el disponible, el utilizado y las tres últimas compras con la tarjeta. Parte de lo que Master publica
 // en el buzón (el repositorio privado de GitHub) y le suma las compras que llegaron después, aunque no hayas
 // abierto Master. No copies este archivo a mano: usa el botón «Copiar el script del widget» de Master, que
 // completa las dos líneas siguientes con tu repositorio y tu token.
@@ -14,7 +14,6 @@ const TOKEN = '__TOKEN__';
 const API = 'https://api.github.com/repos/' + REPO;
 const MS_TITLE = 'Master · widget';
 const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-const MESL = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 /* ---------- Formatos y fechas ---------- */
 function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -34,10 +33,6 @@ function validDate(k) {
   const p = k.split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
   return d.getUTCFullYear() === +p[0] && d.getUTCMonth() === +p[1] - 1 && d.getUTCDate() === +p[2];
 }
-// Meses como 'aaaa-mm'
-function thisMonth() { return dayKey(new Date()).slice(0, 7); }
-function addMonths(k, d) { const t = +k.slice(0, 4) * 12 + (+k.slice(5, 7) - 1) + d; return Math.floor(t / 12) + '-' + pad(t % 12 + 1); }
-function monthsFrom(a, b) { return (+b.slice(0, 4) - +a.slice(0, 4)) * 12 + (+b.slice(5, 7) - +a.slice(5, 7)); }
 
 /* ---------- Lector de los avisos del banco (el mismo de Master) ---------- */
 const CP1252 = { 0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84, 0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02c6: 0x88, 0x2030: 0x89, 0x0160: 0x8a,
@@ -96,16 +91,6 @@ function parseMail(raw, cards) {
   return out;
 }
 
-/* ---------- Cuotas (igual que en Master) ---------- */
-// De una compra en cuotas { a: monto total, n: cuotas, f: mes de la cuota 1 }, lo que vence después del mes dado.
-// Esas cuotas ocupan cupo, pero todavía no entran en el total a pagar.
-function laterAmt(q, month) {
-  const i = monthsFrom(q.f, month), paid = Math.max(0, Math.min(q.n, i)), now = i >= 0 && i < q.n ? i + 1 : 0;
-  const v = Math.floor(q.a / q.n), paidAmt = paid >= q.n ? q.a : paid * v;
-  const nowAmt = now ? (now === q.n ? q.a - v * (q.n - 1) : v) : 0;
-  return q.a - paidAmt - nowAmt;
-}
-
 /* ---------- Datos ---------- */
 async function gh(path) {
   const r = new Request(API + path);
@@ -129,8 +114,10 @@ async function load() {
   let st = null;
   try { st = ms && ms.description ? JSON.parse(ms.description) : null; } catch (e) { st = null; }
   if (!st || st.app !== 'master') return { msg: 'Abre Master y activa el widget en «Buzón y atajo».' };
-  if (typeof st.used !== 'number') return { msg: 'Abre Master e ingresa la deuda pendiente.' };
+  if (typeof st.used !== 'number') return { msg: 'Abre Master e ingresa el cupo y el utilizado.' };
 
+  // Las compras anteriores a este día ya están dentro del saldo anterior
+  const desde = /^\d{4}-\d{2}-\d{2}$/.test(String(st.desde || '')) ? st.desde : String(st.at || '').slice(0, 10);
   const known = {}, nuevas = [];
   (st.keys || []).forEach(function (k) { known[k] = 1; });
   const cards = st.cards && typeof st.cards === 'object' ? st.cards : {};
@@ -146,7 +133,7 @@ async function load() {
           const sk = skel(f.key);
           if (known[sk]) return;
           known[sk] = 1;
-          if (st.at && f.d + 'T' + f.h < st.at) return;           // anterior a la deuda inicial: ya está dentro de ella
+          if (desde && f.d < desde) return;
           nuevas.push(f);
         });
       });
@@ -154,18 +141,12 @@ async function load() {
     }
   }
   let used = st.used;
-  const cuotas = (st.cuotas || []).filter(function (q) { return q && q.a > 0 && q.n > 1 && /^\d{4}-\d{2}$/.test(String(q.f)); });
-  nuevas.forEach(function (f) {
-    used += f.m;
-    if (f.n > 1) cuotas.push({ a: f.m, n: f.n, f: addMonths(f.d.slice(0, 7), 1) });   // la cuota 1, el mes siguiente a la compra
-  });
-  const month = thisMonth();
-  let later = 0;
-  cuotas.forEach(function (q) { later += laterAmt(q, month); });
+  nuevas.forEach(function (f) { used += f.m; });
+  const limit = typeof st.limit === 'number' && st.limit > 0 ? st.limit : 0;
   const buys = (st.ult || []).concat(nuevas).filter(function (b) { return b && b.d && b.m > 0; })
-    .sort(function (a, b) { return (a.d + 'T' + a.h) < (b.d + 'T' + b.h) ? 1 : -1; }).slice(0, 3)
-    .map(function (b) { return { d: b.d, h: b.h, c: String(b.c || 'Compra'), m: b.m, w: b.w === 'A' ? 'A' : 'T' }; });
-  return { due: Math.max(0, used - later), used: used, later: later, month: month, buys: buys, nuevas: nuevas.length, at: Date.now() };
+    .sort(function (a, b) { return (a.d + 'T' + (a.h || '')) < (b.d + 'T' + (b.h || '')) ? 1 : -1; }).slice(0, 3)
+    .map(function (b) { return { d: b.d, h: String(b.h || ''), c: String(b.c || 'Compra'), m: b.m, w: b.w === 'A' ? 'A' : 'T' }; });
+  return { avail: limit - used, used: used, limit: limit, buys: buys, nuevas: nuevas.length, at: Date.now() };
 }
 
 /* ---------- Dibujo ---------- */
@@ -183,8 +164,8 @@ function build(res, family) {
   const lock = String(family || '').indexOf('accessory') === 0;
   const small = family === 'small';
   if (lock) {
-    // Pantalla bloqueada: total a pagar y última compra
-    label(w, 'Master ' + (res.msg ? '' : money(res.due)), 14, null, 0, true).minimumScaleFactor = 0.6;
+    // Pantalla bloqueada: disponible y última compra
+    label(w, res.msg ? 'Master' : 'Disp. ' + money(res.avail), 14, null, 0, true).minimumScaleFactor = 0.6;
     if (res.msg) label(w, res.msg, 11).lineLimit = 2;
     else if (res.buys.length) label(w, res.buys[0].c + ' ' + money(res.buys[0].m), 11).minimumScaleFactor = 0.7;
     return w;
@@ -200,8 +181,7 @@ function build(res, family) {
   const head = w.addStack();
   head.layoutHorizontally();
   head.centerAlignContent();
-  const mes = res.month ? MESL[+res.month.slice(5, 7) - 1].toUpperCase() : '';
-  label(head, small || !mes ? 'A PAGAR' : 'A PAGAR EN ' + mes, small ? 9 : 10, AMBER, 0, true);
+  label(head, 'DISPONIBLE', small ? 9 : 10, AMBER, 0, true);
   head.addSpacer();
   if (res.at) label(head, (res.old ? 'sin conexión · ' : '') + hm(new Date(res.at)), 9, WHITE, 0.6);
   w.addSpacer(2);
@@ -212,17 +192,19 @@ function build(res, family) {
     w.addSpacer();
     return w;
   }
-  const total = label(w, money(res.due), small ? 22 : 28, WHITE, 0, true);
+  const total = label(w, money(res.avail), small ? 22 : 28, WHITE, 0, true);
   total.minimumScaleFactor = 0.5;
+  const sub = label(w, 'Utilizado ' + money(res.used), small ? 10 : 12, WHITE, 0.75);
+  sub.minimumScaleFactor = 0.7;
   w.addSpacer(small ? 4 : 8);
 
   if (!res.buys.length) label(w, 'Aún no hay compras', 12, WHITE, 0.7);
-  res.buys.forEach(function (b, i) {
+  res.buys.slice(0, small ? 2 : 3).forEach(function (b, i) {
     if (i) w.addSpacer(small ? 2 : 4);
     const row = w.addStack();
     row.layoutHorizontally();
     row.centerAlignContent();
-    if (!small) { label(row, dayLabel(b.d) + ' ' + b.h, 10, WHITE, 0.6); row.addSpacer(6); }
+    if (!small) { label(row, dayLabel(b.d) + (b.h ? ' ' + b.h : ''), 10, WHITE, 0.6); row.addSpacer(6); }
     label(row, b.w, small ? 9 : 10, b.w === 'A' ? ADI : TIT, 0, true);       // T: titular · A: adicional
     row.addSpacer(4);
     label(row, b.c, small ? 10 : 12, WHITE, 0.95);
@@ -243,7 +225,7 @@ if (/^__/.test(TOKEN) || /^__/.test(REPO)) {
     if (!res.msg) writeCache(res);
   } catch (e) {
     const c = readCache();
-    if (c && !c.msg) { res = c; res.old = true; }
+    if (c && !c.msg && typeof c.avail === 'number') { res = c; res.old = true; }
     else res = { msg: e && e.status === 401 ? 'El token venció. Copia de nuevo el script desde Master.' : 'No se pudo leer el buzón. Revisa la conexión.' };
   }
 }

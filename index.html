@@ -647,8 +647,11 @@ body { font-size: 17px; line-height: 1.38; }
   // Si el banco reemplaza un plástico, se agrega aquí su nueva terminación.
   var CARDS = { '9908': 'T', '4526': 'A' };
   var WHO = { T: 'Titular', A: 'Adicional' };
-  var LIMIT = 5000000;                 // cupo de la tarjeta, en pesos (se puede cambiar al ajustar la deuda)
+  var LIMIT = 5000000;                 // cupo de la tarjeta, en pesos (se puede cambiar en «Ajustar»)
   var MAX_N = 60;                      // máximo de cuotas de una compra
+  // Día aproximado en que el banco cierra la facturación. Solo sirve para sugerir en qué facturación se cobra la
+  // cuota 1 de una compra en cuotas: hasta ese día, la del mismo mes; después, la del mes siguiente.
+  var CIERRE = 22;
 
   var MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
   var MESL = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -659,11 +662,10 @@ body { font-size: 17px; line-height: 1.38; }
   var CFG_PATH = 'tarjeta/config';
   var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   var TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-  var AT_RE = /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/;
+  var AT_RE = /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/;   // solo para leer datos de la versión anterior
   var YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
   var MAX_AMOUNT = 9999999999;
   var MAX_IGNORED = 400;
-  var MAX_CORTES = 120;
   var PAGE = 80;
   var SENDER = 'enviodigital@bancochile.cl';
   var API = 'https://api.github.com/repos/';
@@ -672,16 +674,15 @@ body { font-size: 17px; line-height: 1.38; }
   var MAX_PAGES = 10;                  // hasta 1.000 avisos por lectura
   var SYNC_EVERY = 2 * 60 * 1000;      // al volver a la app, no releer el buzón antes de 2 minutos
   var SYNC_MARGIN = 15 * 60 * 1000;    // cada lectura repasa los últimos 15 minutos ya leídos
-  var READER = 3;                      // versión del lector de avisos: cuando cambia, el buzón se relee completo una vez
+  var READER = 4;                      // versión del lector de avisos: cuando cambia, el buzón se relee completo una vez
   var WIDGET_TITLE = 'Master · widget';   // hito del buzón donde se publica el estado para el widget
   // Script del widget para la app Scriptable (el mismo de widget/master-widget.js); al copiarlo se completa con el buzón y el token
-  var WIDGET_CODE = /*WIDGET:START*/"// Variables used by Scriptable.\n// These must be at the very top of the file. Do not edit.\n// icon-color: orange; icon-glyph: credit-card;\n\n// Master · widget para la pantalla de inicio del iPhone (app Scriptable)\n//\n// Muestra el total a pagar de este mes y las tres últimas compras con la tarjeta. Parte de lo que Master publica\n// en el buzón (el repositorio privado de GitHub) y le suma las compras que llegaron después, aunque no hayas\n// abierto Master. No copies este archivo a mano: usa el botón «Copiar el script del widget» de Master, que\n// completa las dos líneas siguientes con tu repositorio y tu token.\nconst REPO = '__REPO__';\nconst TOKEN = '__TOKEN__';\n\nconst API = 'https://api.github.com/repos/' + REPO;\nconst MS_TITLE = 'Master · widget';\nconst MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];\nconst MESL = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];\n\n/* ---------- Formatos y fechas ---------- */\nfunction pad(n) { return (n < 10 ? '0' : '') + n; }\nfunction dayKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }\nfunction dots(n) { return String(Math.round(Math.abs(n))).replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.'); }\nfunction money(n) { return (n < 0 ? '−' : '') + '$' + dots(n); }\nfunction hm(d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()); }\nfunction dayLabel(k) {\n  const t = new Date(), y = new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1);\n  if (k === dayKey(t)) return 'hoy';\n  if (k === dayKey(y)) return 'ayer';\n  const p = k.split('-');\n  return (+p[2]) + ' ' + MES[+p[1] - 1];\n}\nfunction validDate(k) {\n  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(k)) return false;\n  const p = k.split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));\n  return d.getUTCFullYear() === +p[0] && d.getUTCMonth() === +p[1] - 1 && d.getUTCDate() === +p[2];\n}\n// Meses como 'aaaa-mm'\nfunction thisMonth() { return dayKey(new Date()).slice(0, 7); }\nfunction addMonths(k, d) { const t = +k.slice(0, 4) * 12 + (+k.slice(5, 7) - 1) + d; return Math.floor(t / 12) + '-' + pad(t % 12 + 1); }\nfunction monthsFrom(a, b) { return (+b.slice(0, 4) - +a.slice(0, 4)) * 12 + (+b.slice(5, 7) - +a.slice(5, 7)); }\n\n/* ---------- Lector de los avisos del banco (el mismo de Master) ---------- */\nconst CP1252 = { 0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84, 0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02c6: 0x88, 0x2030: 0x89, 0x0160: 0x8a,\n  0x2039: 0x8b, 0x0152: 0x8c, 0x017d: 0x8e, 0x2018: 0x91, 0x2019: 0x92, 0x201c: 0x93, 0x201d: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97, 0x02dc: 0x98,\n  0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b, 0x0153: 0x9c, 0x017e: 0x9e, 0x0178: 0x9f };\nfunction contByte(ch) { let c = ch.charCodeAt(0); if (c > 0xff) c = CP1252[c] || 0; return c >= 0x80 && c <= 0xbf ? c : -1; }\nfunction demojibake(s) {\n  if (!/[ÂÃâ]/.test(s)) return s;\n  return s.replace(/[ÂÃ][^\\x00-\\x7f]|â[^\\x00-\\x7f]{2}/g, function (seq) {\n    const b1 = contByte(seq.charAt(1)), b2 = seq.length > 2 ? contByte(seq.charAt(2)) : 0;\n    if (b1 < 0 || b2 < 0) return seq;\n    return String.fromCharCode(seq.length > 2 ? (0x2 << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f) : ((seq.charCodeAt(0) & 0x1f) << 6) | (b1 & 0x3f));\n  });\n}\nconst ENT = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '\"', apos: \"'\", dollar: '$', aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú',\n  Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú', ntilde: 'ñ', Ntilde: 'Ñ', uuml: 'ü', Uuml: 'Ü', iexcl: '¡', iquest: '¿', ordf: 'ª', ordm: 'º',\n  deg: '°', middot: '·', laquo: '«', raquo: '»', ndash: '–', mdash: '—', hellip: '…', copy: '©', reg: '®' };\nfunction plainText(s) {\n  s = String(s == null ? '' : s);\n  if (s.length > 400000) s = s.slice(-400000);\n  s = demojibake(s);\n  if (s.normalize) s = s.normalize('NFC');\n  if (/<[a-z!\\/][^>]*>/i.test(s)) s = s.replace(/<(script|style)\\b[\\s\\S]*?<\\/\\1>/gi, ' ').replace(/<[^>]+>/g, ' ');\n  s = s.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, function (all, e) {\n    if (e.charAt(0) === '#') {\n      const c = e.charAt(1).toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);\n      return c > 0 && c < 0x10000 ? String.fromCharCode(c) : ' ';\n    }\n    return Object.prototype.hasOwnProperty.call(ENT, e) ? ENT[e] : all;\n  });\n  return s.replace(/[\\s\\xa0\\u200b-\\u200d\\ufeff]+/g, ' ');\n}\nfunction clean(s) { return String(s == null ? '' : s).replace(/\\s+/g, ' ').trim().slice(0, 60); }\nfunction skel(key) {\n  const p = String(key).split('|');\n  return p[0] + '|' + (p[1] || '') + '|' + p.slice(2).join('').toUpperCase().replace(/[^A-Z0-9]/g, '');\n}\n// Devuelve las compras con la tarjeta que trae un texto. Manda la terminación de la tarjeta; quedan fuera las\n// compras con cargo a la cuenta (las registra FAN), las que son en dólares y las de otra tarjeta.\nfunction parseMail(raw, cards) {\n  const text = plainText(raw);\n  const re = /compra(?:\\W{1,4}en\\W{1,4}(?:(\\d{1,2})\\W{1,4})?cuotas?)?\\W{1,4}por\\W{1,4}?(US\\$|USD|\\$)?\\W{0,3}?([\\d.]+(?:,\\d{1,2})?)(?:\\W{1,4}en\\W{1,4}(\\d{1,2})\\W{1,4}cuotas?)?\\W{1,4}con\\W{1,4}(?:cargo\\W{1,4}a\\W{1,4})?(.{1,60}?)\\s+en\\s+(.{1,80}?)\\s+el\\s+(\\d{1,2})[\\/-](\\d{1,2})[\\/-](\\d{4})(?:\\W{1,4}a\\W{1,4}las)?\\W{1,4}(\\d{1,2}):(\\d{2})/gi;\n  const out = [];\n  let m;\n  while ((m = re.exec(text))) {\n    const cur = (m[2] || '$').toUpperCase(), medio = clean(m[5]), merchant = clean(m[6]);\n    const amount = parseInt(m[3].replace(/\\./g, '').replace(/,.*$/, ''), 10);\n    const date = m[9] + '-' + pad(+m[8]) + '-' + pad(+m[7]), time = pad(+m[10]) + ':' + m[11];\n    if (!validDate(date) || !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time) || !merchant || !(amount > 0)) continue;\n    const card = (/(\\d{4})\\D{0,2}$/.exec(medio) || [])[1] || '';\n    if ((/cuenta/i.test(medio) && !/tarjeta/i.test(medio)) || cur !== '$' || !cards[card]) continue;\n    const n = +(m[1] || m[4] || 1);\n    out.push({ d: date, h: time, c: merchant, m: amount, w: cards[card], n: n >= 1 && n <= 60 ? n : 1,\n      key: date + 'T' + time + '|' + amount + '|' + merchant.toUpperCase() + '|' + card });\n  }\n  return out;\n}\n\n/* ---------- Cuotas (igual que en Master) ---------- */\n// De una compra en cuotas { a: monto total, n: cuotas, f: mes de la cuota 1 }, lo que vence después del mes dado.\n// Esas cuotas ocupan cupo, pero todavía no entran en el total a pagar.\nfunction laterAmt(q, month) {\n  const i = monthsFrom(q.f, month), paid = Math.max(0, Math.min(q.n, i)), now = i >= 0 && i < q.n ? i + 1 : 0;\n  const v = Math.floor(q.a / q.n), paidAmt = paid >= q.n ? q.a : paid * v;\n  const nowAmt = now ? (now === q.n ? q.a - v * (q.n - 1) : v) : 0;\n  return q.a - paidAmt - nowAmt;\n}\n\n/* ---------- Datos ---------- */\nasync function gh(path) {\n  const r = new Request(API + path);\n  r.headers = { Authorization: 'Bearer ' + TOKEN, Accept: 'application/vnd.github+json' };\n  r.timeoutInterval = 20;\n  const data = await r.loadJSON();\n  const code = r.response && r.response.statusCode;\n  if (code && code >= 400) { const e = new Error('GitHub ' + code); e.status = code; throw e; }\n  return data;\n}\nfunction cachePath() { const fm = FileManager.local(); return fm.joinPath(fm.documentsDirectory(), 'master-widget.json'); }\nfunction readCache() {\n  try { const fm = FileManager.local(), p = cachePath(); return fm.fileExists(p) ? JSON.parse(fm.readString(p)) : null; } catch (e) { return null; }\n}\nfunction writeCache(res) { try { FileManager.local().writeString(cachePath(), JSON.stringify(res)); } catch (e) {} }\n\n// Lo publicado por Master + las compras que llegaron al buzón después de la última vez que Master lo leyó\nasync function load() {\n  const list = await gh('/milestones?state=all&per_page=100');\n  const ms = (Array.isArray(list) ? list : []).filter(function (x) { return x && x.title === MS_TITLE; })[0];\n  let st = null;\n  try { st = ms && ms.description ? JSON.parse(ms.description) : null; } catch (e) { st = null; }\n  if (!st || st.app !== 'master') return { msg: 'Abre Master y activa el widget en «Buzón y atajo».' };\n  if (typeof st.used !== 'number') return { msg: 'Abre Master e ingresa la deuda pendiente.' };\n\n  const known = {}, nuevas = [];\n  (st.keys || []).forEach(function (k) { known[k] = 1; });\n  const cards = st.cards && typeof st.cards === 'object' ? st.cards : {};\n  if (st.read > 0) {   // sin una lectura previa de Master no hay desde dónde contar lo nuevo\n    const since = '&since=' + encodeURIComponent(new Date(st.read - 30 * 60000).toISOString().replace(/\\.\\d+Z$/, 'Z'));\n    for (let page = 1; page <= 3; page++) {\n      const issues = await gh('/issues?state=all&sort=created&direction=asc&per_page=100&page=' + page + since);\n      if (!Array.isArray(issues)) break;\n      issues.forEach(function (it) {\n        if (!it || it.pull_request) return;\n        const title = String(it.title || '');\n        parseMail((title.length > 20 ? title + '\\n' : '') + String(it.body || ''), cards).forEach(function (f) {\n          const sk = skel(f.key);\n          if (known[sk]) return;\n          known[sk] = 1;\n          if (st.at && f.d + 'T' + f.h < st.at) return;           // anterior a la deuda inicial: ya está dentro de ella\n          nuevas.push(f);\n        });\n      });\n      if (issues.length < 100) break;\n    }\n  }\n  let used = st.used;\n  const cuotas = (st.cuotas || []).filter(function (q) { return q && q.a > 0 && q.n > 1 && /^\\d{4}-\\d{2}$/.test(String(q.f)); });\n  nuevas.forEach(function (f) {\n    used += f.m;\n    if (f.n > 1) cuotas.push({ a: f.m, n: f.n, f: addMonths(f.d.slice(0, 7), 1) });   // la cuota 1, el mes siguiente a la compra\n  });\n  const month = thisMonth();\n  let later = 0;\n  cuotas.forEach(function (q) { later += laterAmt(q, month); });\n  const buys = (st.ult || []).concat(nuevas).filter(function (b) { return b && b.d && b.m > 0; })\n    .sort(function (a, b) { return (a.d + 'T' + a.h) < (b.d + 'T' + b.h) ? 1 : -1; }).slice(0, 3)\n    .map(function (b) { return { d: b.d, h: b.h, c: String(b.c || 'Compra'), m: b.m, w: b.w === 'A' ? 'A' : 'T' }; });\n  return { due: Math.max(0, used - later), used: used, later: later, month: month, buys: buys, nuevas: nuevas.length, at: Date.now() };\n}\n\n/* ---------- Dibujo ---------- */\nconst WHITE = new Color('#ffffff'), AMBER = new Color('#BDEBFB'), TIT = new Color('#DCE6FF'), ADI = new Color('#7FD3F5');\nfunction label(stack, str, size, color, opacity, bold) {\n  const t = stack.addText(str);\n  t.font = bold ? Font.boldSystemFont(size) : Font.systemFont(size);\n  t.textColor = color || WHITE;\n  if (opacity) t.textOpacity = opacity;\n  t.lineLimit = 1;\n  return t;\n}\nfunction build(res, family) {\n  const w = new ListWidget();\n  const lock = String(family || '').indexOf('accessory') === 0;\n  const small = family === 'small';\n  if (lock) {\n    // Pantalla bloqueada: total a pagar y última compra\n    label(w, 'Master ' + (res.msg ? '' : money(res.due)), 14, null, 0, true).minimumScaleFactor = 0.6;\n    if (res.msg) label(w, res.msg, 11).lineLimit = 2;\n    else if (res.buys.length) label(w, res.buys[0].c + ' ' + money(res.buys[0].m), 11).minimumScaleFactor = 0.7;\n    return w;\n  }\n  const g = new LinearGradient();\n  g.colors = [new Color('#4D78F3'), new Color('#2141D6')];\n  g.locations = [0, 1];\n  g.startPoint = new Point(0, 0);\n  g.endPoint = new Point(1, 1);\n  w.backgroundGradient = g;\n  w.setPadding(small ? 12 : 14, small ? 12 : 16, small ? 10 : 12, small ? 12 : 16);\n\n  const head = w.addStack();\n  head.layoutHorizontally();\n  head.centerAlignContent();\n  const mes = res.month ? MESL[+res.month.slice(5, 7) - 1].toUpperCase() : '';\n  label(head, small || !mes ? 'A PAGAR' : 'A PAGAR EN ' + mes, small ? 9 : 10, AMBER, 0, true);\n  head.addSpacer();\n  if (res.at) label(head, (res.old ? 'sin conexión · ' : '') + hm(new Date(res.at)), 9, WHITE, 0.6);\n  w.addSpacer(2);\n\n  if (res.msg) {\n    const t = label(w, res.msg, small ? 12 : 14, WHITE, 0.9);\n    t.lineLimit = 4;\n    w.addSpacer();\n    return w;\n  }\n  const total = label(w, money(res.due), small ? 22 : 28, WHITE, 0, true);\n  total.minimumScaleFactor = 0.5;\n  w.addSpacer(small ? 4 : 8);\n\n  if (!res.buys.length) label(w, 'Aún no hay compras', 12, WHITE, 0.7);\n  res.buys.forEach(function (b, i) {\n    if (i) w.addSpacer(small ? 2 : 4);\n    const row = w.addStack();\n    row.layoutHorizontally();\n    row.centerAlignContent();\n    if (!small) { label(row, dayLabel(b.d) + ' ' + b.h, 10, WHITE, 0.6); row.addSpacer(6); }\n    label(row, b.w, small ? 9 : 10, b.w === 'A' ? ADI : TIT, 0, true);       // T: titular · A: adicional\n    row.addSpacer(4);\n    label(row, b.c, small ? 10 : 12, WHITE, 0.95);\n    row.addSpacer();\n    label(row, money(b.m), small ? 10 : 12, WHITE, 0, true);\n  });\n  w.addSpacer();\n  return w;\n}\n\n/* ---------- Ejecución ---------- */\nlet res;\nif (/^__/.test(TOKEN) || /^__/.test(REPO)) {\n  res = { msg: 'Copia este script desde Master, con el botón «Copiar el script del widget».' };\n} else {\n  try {\n    res = await load();\n    if (!res.msg) writeCache(res);\n  } catch (e) {\n    const c = readCache();\n    if (c && !c.msg) { res = c; res.old = true; }\n    else res = { msg: e && e.status === 401 ? 'El token venció. Copia de nuevo el script desde Master.' : 'No se pudo leer el buzón. Revisa la conexión.' };\n  }\n}\nconst widget = build(res, config.widgetFamily);\nwidget.refreshAfterDate = new Date(Date.now() + 10 * 60 * 1000);\nif (config.runsInWidget) Script.setWidget(widget);\nelse await widget.presentMedium();\nScript.complete();\n"/*WIDGET:END*/;
+  var WIDGET_CODE = /*WIDGET:START*/"// Variables used by Scriptable.\n// These must be at the very top of the file. Do not edit.\n// icon-color: orange; icon-glyph: credit-card;\n\n// Master · widget para la pantalla de inicio del iPhone (app Scriptable)\n//\n// Muestra el disponible, el utilizado y las tres últimas compras con la tarjeta. Parte de lo que Master publica\n// en el buzón (el repositorio privado de GitHub) y le suma las compras que llegaron después, aunque no hayas\n// abierto Master. No copies este archivo a mano: usa el botón «Copiar el script del widget» de Master, que\n// completa las dos líneas siguientes con tu repositorio y tu token.\nconst REPO = '__REPO__';\nconst TOKEN = '__TOKEN__';\n\nconst API = 'https://api.github.com/repos/' + REPO;\nconst MS_TITLE = 'Master · widget';\nconst MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];\n\n/* ---------- Formatos y fechas ---------- */\nfunction pad(n) { return (n < 10 ? '0' : '') + n; }\nfunction dayKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }\nfunction dots(n) { return String(Math.round(Math.abs(n))).replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.'); }\nfunction money(n) { return (n < 0 ? '−' : '') + '$' + dots(n); }\nfunction hm(d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()); }\nfunction dayLabel(k) {\n  const t = new Date(), y = new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1);\n  if (k === dayKey(t)) return 'hoy';\n  if (k === dayKey(y)) return 'ayer';\n  const p = k.split('-');\n  return (+p[2]) + ' ' + MES[+p[1] - 1];\n}\nfunction validDate(k) {\n  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(k)) return false;\n  const p = k.split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));\n  return d.getUTCFullYear() === +p[0] && d.getUTCMonth() === +p[1] - 1 && d.getUTCDate() === +p[2];\n}\n\n/* ---------- Lector de los avisos del banco (el mismo de Master) ---------- */\nconst CP1252 = { 0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84, 0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02c6: 0x88, 0x2030: 0x89, 0x0160: 0x8a,\n  0x2039: 0x8b, 0x0152: 0x8c, 0x017d: 0x8e, 0x2018: 0x91, 0x2019: 0x92, 0x201c: 0x93, 0x201d: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97, 0x02dc: 0x98,\n  0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b, 0x0153: 0x9c, 0x017e: 0x9e, 0x0178: 0x9f };\nfunction contByte(ch) { let c = ch.charCodeAt(0); if (c > 0xff) c = CP1252[c] || 0; return c >= 0x80 && c <= 0xbf ? c : -1; }\nfunction demojibake(s) {\n  if (!/[ÂÃâ]/.test(s)) return s;\n  return s.replace(/[ÂÃ][^\\x00-\\x7f]|â[^\\x00-\\x7f]{2}/g, function (seq) {\n    const b1 = contByte(seq.charAt(1)), b2 = seq.length > 2 ? contByte(seq.charAt(2)) : 0;\n    if (b1 < 0 || b2 < 0) return seq;\n    return String.fromCharCode(seq.length > 2 ? (0x2 << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f) : ((seq.charCodeAt(0) & 0x1f) << 6) | (b1 & 0x3f));\n  });\n}\nconst ENT = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '\"', apos: \"'\", dollar: '$', aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú',\n  Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú', ntilde: 'ñ', Ntilde: 'Ñ', uuml: 'ü', Uuml: 'Ü', iexcl: '¡', iquest: '¿', ordf: 'ª', ordm: 'º',\n  deg: '°', middot: '·', laquo: '«', raquo: '»', ndash: '–', mdash: '—', hellip: '…', copy: '©', reg: '®' };\nfunction plainText(s) {\n  s = String(s == null ? '' : s);\n  if (s.length > 400000) s = s.slice(-400000);\n  s = demojibake(s);\n  if (s.normalize) s = s.normalize('NFC');\n  if (/<[a-z!\\/][^>]*>/i.test(s)) s = s.replace(/<(script|style)\\b[\\s\\S]*?<\\/\\1>/gi, ' ').replace(/<[^>]+>/g, ' ');\n  s = s.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, function (all, e) {\n    if (e.charAt(0) === '#') {\n      const c = e.charAt(1).toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);\n      return c > 0 && c < 0x10000 ? String.fromCharCode(c) : ' ';\n    }\n    return Object.prototype.hasOwnProperty.call(ENT, e) ? ENT[e] : all;\n  });\n  return s.replace(/[\\s\\xa0\\u200b-\\u200d\\ufeff]+/g, ' ');\n}\nfunction clean(s) { return String(s == null ? '' : s).replace(/\\s+/g, ' ').trim().slice(0, 60); }\nfunction skel(key) {\n  const p = String(key).split('|');\n  return p[0] + '|' + (p[1] || '') + '|' + p.slice(2).join('').toUpperCase().replace(/[^A-Z0-9]/g, '');\n}\n// Devuelve las compras con la tarjeta que trae un texto. Manda la terminación de la tarjeta; quedan fuera las\n// compras con cargo a la cuenta (las registra FAN), las que son en dólares y las de otra tarjeta.\nfunction parseMail(raw, cards) {\n  const text = plainText(raw);\n  const re = /compra(?:\\W{1,4}en\\W{1,4}(?:(\\d{1,2})\\W{1,4})?cuotas?)?\\W{1,4}por\\W{1,4}?(US\\$|USD|\\$)?\\W{0,3}?([\\d.]+(?:,\\d{1,2})?)(?:\\W{1,4}en\\W{1,4}(\\d{1,2})\\W{1,4}cuotas?)?\\W{1,4}con\\W{1,4}(?:cargo\\W{1,4}a\\W{1,4})?(.{1,60}?)\\s+en\\s+(.{1,80}?)\\s+el\\s+(\\d{1,2})[\\/-](\\d{1,2})[\\/-](\\d{4})(?:\\W{1,4}a\\W{1,4}las)?\\W{1,4}(\\d{1,2}):(\\d{2})/gi;\n  const out = [];\n  let m;\n  while ((m = re.exec(text))) {\n    const cur = (m[2] || '$').toUpperCase(), medio = clean(m[5]), merchant = clean(m[6]);\n    const amount = parseInt(m[3].replace(/\\./g, '').replace(/,.*$/, ''), 10);\n    const date = m[9] + '-' + pad(+m[8]) + '-' + pad(+m[7]), time = pad(+m[10]) + ':' + m[11];\n    if (!validDate(date) || !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time) || !merchant || !(amount > 0)) continue;\n    const card = (/(\\d{4})\\D{0,2}$/.exec(medio) || [])[1] || '';\n    if ((/cuenta/i.test(medio) && !/tarjeta/i.test(medio)) || cur !== '$' || !cards[card]) continue;\n    const n = +(m[1] || m[4] || 1);\n    out.push({ d: date, h: time, c: merchant, m: amount, w: cards[card], n: n >= 1 && n <= 60 ? n : 1,\n      key: date + 'T' + time + '|' + amount + '|' + merchant.toUpperCase() + '|' + card });\n  }\n  return out;\n}\n\n/* ---------- Datos ---------- */\nasync function gh(path) {\n  const r = new Request(API + path);\n  r.headers = { Authorization: 'Bearer ' + TOKEN, Accept: 'application/vnd.github+json' };\n  r.timeoutInterval = 20;\n  const data = await r.loadJSON();\n  const code = r.response && r.response.statusCode;\n  if (code && code >= 400) { const e = new Error('GitHub ' + code); e.status = code; throw e; }\n  return data;\n}\nfunction cachePath() { const fm = FileManager.local(); return fm.joinPath(fm.documentsDirectory(), 'master-widget.json'); }\nfunction readCache() {\n  try { const fm = FileManager.local(), p = cachePath(); return fm.fileExists(p) ? JSON.parse(fm.readString(p)) : null; } catch (e) { return null; }\n}\nfunction writeCache(res) { try { FileManager.local().writeString(cachePath(), JSON.stringify(res)); } catch (e) {} }\n\n// Lo publicado por Master + las compras que llegaron al buzón después de la última vez que Master lo leyó\nasync function load() {\n  const list = await gh('/milestones?state=all&per_page=100');\n  const ms = (Array.isArray(list) ? list : []).filter(function (x) { return x && x.title === MS_TITLE; })[0];\n  let st = null;\n  try { st = ms && ms.description ? JSON.parse(ms.description) : null; } catch (e) { st = null; }\n  if (!st || st.app !== 'master') return { msg: 'Abre Master y activa el widget en «Buzón y atajo».' };\n  if (typeof st.used !== 'number') return { msg: 'Abre Master e ingresa el cupo y el utilizado.' };\n\n  // Las compras anteriores a este día ya están dentro del saldo anterior\n  const desde = /^\\d{4}-\\d{2}-\\d{2}$/.test(String(st.desde || '')) ? st.desde : String(st.at || '').slice(0, 10);\n  const known = {}, nuevas = [];\n  (st.keys || []).forEach(function (k) { known[k] = 1; });\n  const cards = st.cards && typeof st.cards === 'object' ? st.cards : {};\n  if (st.read > 0) {   // sin una lectura previa de Master no hay desde dónde contar lo nuevo\n    const since = '&since=' + encodeURIComponent(new Date(st.read - 30 * 60000).toISOString().replace(/\\.\\d+Z$/, 'Z'));\n    for (let page = 1; page <= 3; page++) {\n      const issues = await gh('/issues?state=all&sort=created&direction=asc&per_page=100&page=' + page + since);\n      if (!Array.isArray(issues)) break;\n      issues.forEach(function (it) {\n        if (!it || it.pull_request) return;\n        const title = String(it.title || '');\n        parseMail((title.length > 20 ? title + '\\n' : '') + String(it.body || ''), cards).forEach(function (f) {\n          const sk = skel(f.key);\n          if (known[sk]) return;\n          known[sk] = 1;\n          if (desde && f.d < desde) return;\n          nuevas.push(f);\n        });\n      });\n      if (issues.length < 100) break;\n    }\n  }\n  let used = st.used;\n  nuevas.forEach(function (f) { used += f.m; });\n  const limit = typeof st.limit === 'number' && st.limit > 0 ? st.limit : 0;\n  const buys = (st.ult || []).concat(nuevas).filter(function (b) { return b && b.d && b.m > 0; })\n    .sort(function (a, b) { return (a.d + 'T' + (a.h || '')) < (b.d + 'T' + (b.h || '')) ? 1 : -1; }).slice(0, 3)\n    .map(function (b) { return { d: b.d, h: String(b.h || ''), c: String(b.c || 'Compra'), m: b.m, w: b.w === 'A' ? 'A' : 'T' }; });\n  return { avail: limit - used, used: used, limit: limit, buys: buys, nuevas: nuevas.length, at: Date.now() };\n}\n\n/* ---------- Dibujo ---------- */\nconst WHITE = new Color('#ffffff'), AMBER = new Color('#BDEBFB'), TIT = new Color('#DCE6FF'), ADI = new Color('#7FD3F5');\nfunction label(stack, str, size, color, opacity, bold) {\n  const t = stack.addText(str);\n  t.font = bold ? Font.boldSystemFont(size) : Font.systemFont(size);\n  t.textColor = color || WHITE;\n  if (opacity) t.textOpacity = opacity;\n  t.lineLimit = 1;\n  return t;\n}\nfunction build(res, family) {\n  const w = new ListWidget();\n  const lock = String(family || '').indexOf('accessory') === 0;\n  const small = family === 'small';\n  if (lock) {\n    // Pantalla bloqueada: disponible y última compra\n    label(w, res.msg ? 'Master' : 'Disp. ' + money(res.avail), 14, null, 0, true).minimumScaleFactor = 0.6;\n    if (res.msg) label(w, res.msg, 11).lineLimit = 2;\n    else if (res.buys.length) label(w, res.buys[0].c + ' ' + money(res.buys[0].m), 11).minimumScaleFactor = 0.7;\n    return w;\n  }\n  const g = new LinearGradient();\n  g.colors = [new Color('#4D78F3'), new Color('#2141D6')];\n  g.locations = [0, 1];\n  g.startPoint = new Point(0, 0);\n  g.endPoint = new Point(1, 1);\n  w.backgroundGradient = g;\n  w.setPadding(small ? 12 : 14, small ? 12 : 16, small ? 10 : 12, small ? 12 : 16);\n\n  const head = w.addStack();\n  head.layoutHorizontally();\n  head.centerAlignContent();\n  label(head, 'DISPONIBLE', small ? 9 : 10, AMBER, 0, true);\n  head.addSpacer();\n  if (res.at) label(head, (res.old ? 'sin conexión · ' : '') + hm(new Date(res.at)), 9, WHITE, 0.6);\n  w.addSpacer(2);\n\n  if (res.msg) {\n    const t = label(w, res.msg, small ? 12 : 14, WHITE, 0.9);\n    t.lineLimit = 4;\n    w.addSpacer();\n    return w;\n  }\n  const total = label(w, money(res.avail), small ? 22 : 28, WHITE, 0, true);\n  total.minimumScaleFactor = 0.5;\n  const sub = label(w, 'Utilizado ' + money(res.used), small ? 10 : 12, WHITE, 0.75);\n  sub.minimumScaleFactor = 0.7;\n  w.addSpacer(small ? 4 : 8);\n\n  if (!res.buys.length) label(w, 'Aún no hay compras', 12, WHITE, 0.7);\n  res.buys.slice(0, small ? 2 : 3).forEach(function (b, i) {\n    if (i) w.addSpacer(small ? 2 : 4);\n    const row = w.addStack();\n    row.layoutHorizontally();\n    row.centerAlignContent();\n    if (!small) { label(row, dayLabel(b.d) + (b.h ? ' ' + b.h : ''), 10, WHITE, 0.6); row.addSpacer(6); }\n    label(row, b.w, small ? 9 : 10, b.w === 'A' ? ADI : TIT, 0, true);       // T: titular · A: adicional\n    row.addSpacer(4);\n    label(row, b.c, small ? 10 : 12, WHITE, 0.95);\n    row.addSpacer();\n    label(row, money(b.m), small ? 10 : 12, WHITE, 0, true);\n  });\n  w.addSpacer();\n  return w;\n}\n\n/* ---------- Ejecución ---------- */\nlet res;\nif (/^__/.test(TOKEN) || /^__/.test(REPO)) {\n  res = { msg: 'Copia este script desde Master, con el botón «Copiar el script del widget».' };\n} else {\n  try {\n    res = await load();\n    if (!res.msg) writeCache(res);\n  } catch (e) {\n    const c = readCache();\n    if (c && !c.msg && typeof c.avail === 'number') { res = c; res.old = true; }\n    else res = { msg: e && e.status === 401 ? 'El token venció. Copia de nuevo el script desde Master.' : 'No se pudo leer el buzón. Revisa la conexión.' };\n  }\n}\nconst widget = build(res, config.widgetFamily);\nwidget.refreshAfterDate = new Date(Date.now() + 10 * 60 * 1000);\nif (config.runsInWidget) Script.setWidget(widget);\nelse await widget.presentMedium();\nScript.complete();\n"/*WIDGET:END*/;
   // Si la app está en GitHub Pages, el buzón se sugiere en la misma cuenta
   var OWNER = /\.github\.io$/i.test(location.hostname) ? location.hostname.split('.')[0] : '';
   var DIG = {};
   Object.keys(CARDS).forEach(function (d) { if (!DIG[CARDS[d]]) DIG[CARDS[d]] = d; });
 
-  var I_CARD = '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="3.2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="5.6" y="8.6" width="4.8" height="3.8" rx="1" fill="currentColor"/><path d="M13.6 15.4h4.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   var I_ART = '<svg class="hero-art" viewBox="64 6 46 78" aria-hidden="true"><path d="M70 30a26 26 0 0 1 0 30M82 22a40 40 0 0 1 0 46M94 14a54 54 0 0 1 0 62" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>';
   var I_PLUS = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>';
   var I_MINUS = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>';
@@ -698,12 +699,13 @@ body { font-size: 17px; line-height: 1.38; }
   var toastEl = document.getElementById('toast');
 
   var items = [];                                              // movimientos, del más antiguo al más reciente
-  // deuda inicial, desde cuándo, cupo, avisos descartados, fechas de corte de los periodos cerrados y, en meses,
-  // cuánto después del corte se paga el extracto (0: el mismo mes del corte)
-  var cfg = { debt: 0, at: '', limit: LIMIT, ignored: [], cortes: [], payOff: 0 };
+  // Cupo; «desde»: el día desde el que se registran los movimientos; «saldo»: lo utilizado antes de ese día
+  // (sin las cuotas por cobrar que se anotan aparte); avisos que se eliminaron a propósito
+  var cfg = { limit: LIMIT, desde: '', saldo: 0, ignored: [] };
+  var rawCfg = null;                                           // la configuración tal como llegó (para leer la versión anterior)
   // De este dispositivo: orden del listado, buzón (repositorio y token), última lectura y lo último que el buzón dejó fuera
   // widget: si se publica el estado para el widget; wm: número del hito; wSig: huella de lo último publicado; wAt: cuándo
-  var prefs = { order: 'desc', repo: '', token: '', last: 0, note: null, other: '', reader: READER, widget: false, wm: 0, wSig: '', wAt: 0, payOff: null };
+  var prefs = { order: 'desc', repo: '', token: '', last: 0, note: null, other: '', reader: READER, widget: false, wm: 0, wSig: '', wAt: 0 };
   var filter = 'all';                               // 'all' | 'T' titular | 'A' adicional | 'o' cargos y abonos
   var shown = PAGE;
   var fresh = {};                                   // movimientos recién traídos, para marcarlos como nuevos
@@ -742,9 +744,7 @@ body { font-size: 17px; line-height: 1.38; }
     if (k === dayKey(y)) return 'Ayer';
     return fmt(k);
   }
-  function fmtAt(at) { return fmt(at.slice(0, 10)) + ', ' + at.slice(11); }
   // Meses como 'aaaa-mm'
-  function thisMonth() { return todayKey().slice(0, 7); }
   function addMonths(k, d) { var t = +k.slice(0, 4) * 12 + (+k.slice(5, 7) - 1) + d; return Math.floor(t / 12) + '-' + pad(t % 12 + 1); }
   function monthsFrom(a, b) { return (+b.slice(0, 4) - +a.slice(0, 4)) * 12 + (+b.slice(5, 7) - +a.slice(5, 7)); }
   function monthName(k) { return MESL[+k.slice(5, 7) - 1] + ' ' + k.slice(0, 4); }
@@ -797,7 +797,7 @@ body { font-size: 17px; line-height: 1.38; }
     if (s.normalize) s = s.normalize('NFC');   // «é» siempre como una sola letra, venga como venga en el correo
     if (/<[a-z!\/][^>]*>/i.test(s)) s = s.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ');
     if (/&[#a-z0-9]+;/i.test(s)) { var t = document.createElement('textarea'); t.innerHTML = s; s = t.value; }
-    return s.replace(/[\s ​‌‍﻿]+/g, ' ');
+    return s.replace(/[\s\xa0\u200b-\u200d\ufeff]+/g, ' ');
   }
   // Busca en un texto todas las compras avisadas y decide de quién es cada una. Manda la terminación de la tarjeta:
   // la palabra «Crédito» puede llegar con el acento dañado (CrÃ©dito, Cr?dito), según cómo Atajos lea el correo.
@@ -869,48 +869,56 @@ body { font-size: 17px; line-height: 1.38; }
   }
 
   /* ---------- Datos ---------- */
-  // Tipos: 'c' compra (con tarjeta Titular o Adicional, de contado o en cuotas), 'g' cargo de la tarjeta, 'a' abono.
-  // Una compra en cuotas guarda en «first» el mes en que se paga la cuota 1; si falta, es el mes siguiente a la compra.
+  // Tipos: 'c' compra (Titular o Adicional, de contado o en cuotas), 'g' cargo de la tarjeta, 'a' abono (un pago o
+  // una devolución) y 'q' cuotas por cobrar de una compra anterior al saldo. Las compras en cuotas y las cuotas por
+  // cobrar guardan en «prox» el mes de la facturación que cobra su primera cuota. La hora es opcional.
+  function isCuota(m) { return m.type === 'q' || (m.type === 'c' && m.n > 1); }
+  function proxFor(date) { var ym = date.slice(0, 7); return +date.slice(8, 10) <= CIERRE ? ym : addMonths(ym, 1); }
   function norm(p) {
     if (!p) return null;
     var date = validDate(String(p.date)) ? String(p.date) : null;
     var amount = Math.round(+p.amount);
     if (!date || !(amount > 0) || amount > MAX_AMOUNT) return null;
-    var type = p.type === 'a' ? 'a' : p.type === 'g' ? 'g' : 'c';
+    var type = p.type === 'a' || p.type === 'g' || p.type === 'q' ? p.type : 'c';
     var src = p.src === 'mail' && type === 'c' ? 'mail' : 'manual';
-    var n = type === 'c' ? Math.min(MAX_N, Math.max(1, Math.round(+p.n) || 1)) : 1;
+    var n = type === 'c' || type === 'q' ? Math.min(MAX_N, Math.max(1, Math.round(+p.n) || 1)) : 1;
+    // La versión anterior guardaba el mes de pago de la cuota 1 («first»): su facturación es el mes anterior
+    var prox = YM_RE.test(String(p.prox)) ? String(p.prox) : YM_RE.test(String(p.first)) ? addMonths(String(p.first), -1) : proxFor(date);
     return {
       id: String(p.id || '').replace(/[^\w-]/g, '') || genId(),
       type: type,
       date: date,
-      time: TIME_RE.test(String(p.time)) ? String(p.time) : '12:00',
-      desc: clean(p.desc) || (type === 'a' ? 'Abono' : type === 'g' ? 'Cargo' : 'Compra'),
+      time: TIME_RE.test(String(p.time)) ? String(p.time) : '',
+      desc: clean(p.desc) || (type === 'a' ? 'Abono' : type === 'g' ? 'Cargo' : type === 'q' ? 'Cuotas por cobrar' : 'Compra'),
       amount: amount,
       src: src,
       key: src === 'mail' ? String(p.key || '').slice(0, 180) : '',
       card: /^\d{4}$/.test(String(p.card || '')) ? String(p.card) : '',
-      who: type === 'c' ? (p.who === 'A' ? 'A' : 'T') : '',
+      who: type === 'c' || type === 'q' ? (p.who === 'A' ? 'A' : 'T') : '',
       n: n,
-      first: n > 1 ? (YM_RE.test(String(p.first)) ? String(p.first) : firstFor(date)) : '',
+      prox: type === 'q' || n > 1 ? prox : '',
       ts: +p.ts > 0 ? +p.ts : 0
     };
   }
-  function toDoc(m) { return { type: m.type, date: m.date, time: m.time, desc: m.desc, amount: m.amount, src: m.src, key: m.key, card: m.card, who: m.who, n: m.n, first: m.first, ts: m.ts }; }
+  function toDoc(m) { return { type: m.type, date: m.date, time: m.time, desc: m.desc, amount: m.amount, src: m.src, key: m.key, card: m.card, who: m.who, n: m.n, prox: m.prox, ts: m.ts }; }
   function copyOf(m, changes) { var c = toDoc(m); c.id = m.id; Object.keys(changes || {}).forEach(function (k) { c[k] = changes[k]; }); return c; }
-  function normCfg(c) {
+  function uses(m) { return m.type === 'a' ? -m.amount : m.amount; }   // cuánto cupo ocupa: abonos restan, lo demás suma
+  // «list» sirve para leer la versión anterior, que partía de una deuda con fecha y hora: los movimientos de ese
+  // mismo día anteriores a esa hora ya estaban dentro de la deuda.
+  function normCfg(c, list) {
     c = c || {};
-    var debt = Math.round(+c.debt), limit = Math.round(+c.limit);
-    var at = AT_RE.test(String(c.at)) && validDate(String(c.at).slice(0, 10)) ? String(c.at) : '';
+    var limit = Math.round(+c.limit), saldo = Math.round(+c.saldo), desde = String(c.desde || '');
+    if (!validDate(desde) && AT_RE.test(String(c.at || '')) && validDate(String(c.at).slice(0, 10))) {
+      desde = String(c.at).slice(0, 10); saldo = Math.round(+c.debt) || 0;
+      (list || []).forEach(function (m) { if (m.date === desde && m.time && m.date + 'T' + m.time < c.at) saldo -= uses(m); });
+    }
+    if (!validDate(desde)) desde = '';
     var ign = Array.isArray(c.ignored) ? c.ignored.filter(function (k) { return typeof k === 'string' && k; }).slice(-MAX_IGNORED) : [];
-    var cortes = (Array.isArray(c.cortes) ? c.cortes : []).filter(function (k) { return typeof k === 'string' && validDate(k); });
-    cortes = cortes.filter(function (k, i) { return cortes.indexOf(k) === i; }).sort().slice(-MAX_CORTES);
-    var off = Math.round(+c.payOff);
-    return { debt: at && debt >= 0 && debt <= MAX_AMOUNT ? debt : 0, at: at, limit: limit > 0 && limit <= MAX_AMOUNT ? limit : LIMIT, ignored: ign,
-      cortes: cortes, payOff: off >= 0 && off <= 2 ? off : 0 };
+    return { limit: limit > 0 && limit <= MAX_AMOUNT ? limit : LIMIT, desde: desde, saldo: desde && Math.abs(saldo) <= MAX_AMOUNT ? saldo : 0, ignored: ign };
   }
   // Copia de la configuración con algunos cambios, sin perder los demás campos
   function withCfg(ch) {
-    var n = { debt: cfg.debt, at: cfg.at, limit: cfg.limit, ignored: cfg.ignored, cortes: cfg.cortes, payOff: cfg.payOff };
+    var n = { limit: cfg.limit, desde: cfg.desde, saldo: cfg.saldo, ignored: cfg.ignored };
     Object.keys(ch || {}).forEach(function (k) { n[k] = ch[k]; });
     return n;
   }
@@ -923,127 +931,65 @@ body { font-size: 17px; line-height: 1.38; }
     });
   }
   function find(id) { for (var i = 0; i < items.length; i++) if (items[i].id === id) return items[i]; return null; }
-  function dtOf(m) { return m.date + 'T' + m.time; }
-  function uses(m) { return m.type === 'a' ? -m.amount : m.amount; }   // cuánto cupo ocupa: compras y cargos suman, abonos restan
+  // Lo anterior al día «desde» ya está dentro del saldo anterior
+  function counts(m) { return !cfg.desde || m.date >= cfg.desde; }
 
-  // Cuotas: el total se divide en partes iguales y la última absorbe el redondeo. La cuota 1 se paga en el mes
-  // «first» y las demás, una por mes. Las de meses anteriores cuentan como pagadas, la de este mes entra en el
-  // total a pagar y las de meses siguientes ocupan cupo, pero todavía no se pagan.
+  // Cuotas: el total se divide en partes iguales y la última absorbe el redondeo. Cada cuota se cobra en la facturación
+  // de su mes, una por mes desde «prox»: queda cobrada cuando esa facturación cierra (cerca del día CIERRE). Todas
+  // ocupan cupo (están dentro del utilizado) hasta que se pagan.
   function cuotaVal(m) { return Math.floor(m.amount / m.n); }
   function cuotaAmt(m, k) { return k === m.n ? m.amount - cuotaVal(m) * (m.n - 1) : cuotaVal(m); }
-  // «month» es el mes de pago que se mira; por omisión, el mes actual
-  function cuotaState(m, month) {
-    var i = monthsFrom(m.first, month || thisMonth());                 // 0: la cuota 1 se paga ese mes
-    var paid = Math.max(0, Math.min(m.n, i)), now = i >= 0 && i < m.n ? i + 1 : 0;
-    var paidAmt = paid >= m.n ? m.amount : paid * cuotaVal(m), nowAmt = now ? cuotaAmt(m, now) : 0;
-    return { paid: paid, now: now, later: m.n - paid - (now ? 1 : 0), paidAmt: paidAmt, nowAmt: nowAmt, laterAmt: m.amount - paidAmt - nowAmt, end: addMonths(m.first, m.n - 1) };
+  function cuotaState(m) {
+    var done = Math.max(0, Math.min(m.n, monthsFrom(m.prox, proxFor(todayKey()))));   // facturaciones ya cerradas
+    var doneAmt = done >= m.n ? m.amount : done * cuotaVal(m);
+    return { done: done, pend: m.n - done, doneAmt: doneAmt, pendAmt: m.amount - doneAmt,
+      next: done < m.n ? addMonths(m.prox, done) : '', nextAmt: done < m.n ? cuotaAmt(m, done + 1) : 0, end: addMonths(m.prox, m.n - 1) };
   }
-  /* ---------- Periodos de facturación ---------- */
-  // El banco cierra el periodo en la fecha de corte (ese día entra) y envía el extracto días después. Al cerrar un periodo
-  // en la app se guarda su fecha de corte: el periodo siguiente parte al día siguiente y lleva las compras posteriores.
-  function nextDay(k) {
-    var d = new Date(Date.UTC(+k.slice(0, 4), +k.slice(5, 7) - 1, +k.slice(8, 10) + 1));
-    return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate());
-  }
-  function daysIn(ym) { return new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate(); }
-  function dayIn(ym, d) { return ym + '-' + pad(Math.min(d, daysIn(ym))); }
-  function corteEnd(k) { return k + 'T24'; }          // queda después de cualquier hora de ese día
-  // Cortes que cuentan: los que no son anteriores a la deuda inicial
-  function cortesOn() { var a = cfg.at ? cfg.at.slice(0, 10) : ''; return cfg.at ? cfg.cortes.filter(function (k) { return k >= a; }) : []; }
-  function lastCorte() { var l = cortesOn(); return l.length ? l[l.length - 1] : ''; }
-  // Inicio del periodo que termina en «corte» (sin corte: el periodo abierto): el día siguiente al corte anterior,
-  // o la deuda inicial si no hay un corte antes
-  function periodStart(corte) {
-    var prev = '';
-    cortesOn().forEach(function (k) { if ((!corte || k < corte) && k > prev) prev = k; });
-    var st = prev ? nextDay(prev) + 'T00:00' : cfg.at;
-    return { at: st < cfg.at ? cfg.at : st, prev: prev };
-  }
-  // Mes en que se paga la cuota 1 de una compra: el del extracto que la incluye. Con un periodo cerrado, el día de
-  // su corte dice a qué extracto va la compra; sin periodos cerrados, el mes siguiente a la compra.
-  function firstFor(date) {
-    var lc = lastCorte();
-    if (!lc || !validDate(String(date))) return addMonths(String(date).slice(0, 7), 1);
-    var ym = date.slice(0, 7), c = date <= dayIn(ym, +lc.slice(8, 10)) ? ym : addMonths(ym, 1);
-    return addMonths(c, cfg.payOff);
-  }
-  function emptyTotals() { return { T: 0, A: 0, g: 0, a: 0, nT: 0, nA: 0, ng: 0, na: 0 }; }
-  function addTotal(t, m) { var k = m.type === 'c' ? m.who : m.type; t[k] += m.amount; t['n' + k]++; }
-  // Totales del periodo abierto (desde el último corte), para «Por tarjeta»
-  function openPeriod() {
-    var ps = periodStart(''), t = emptyTotals();
-    items.forEach(function (m) { if (cfg.at && dtOf(m) >= ps.at) addTotal(t, m); });
-    return { start: ps.at, prev: ps.prev, t: t };
-  }
-  // Extracto al corte: la deuda al inicio del periodo y los movimientos desde ese inicio hasta el día del corte. Lo
-  // posterior queda para el periodo siguiente. «pay» es el mes en que se paga el extracto: de las compras en cuotas
-  // entran las cuotas que vencen hasta ese mes.
-  function extractData(corte, pay) {
-    var ps = periodStart(corte), end = corteEnd(corte);
-    var d = { corte: corte, pay: pay, start: ps.at, prev: ps.prev, usedStart: cfg.debt, rows: [], after: [], afterSum: 0, t: emptyTotals(),
-      cuotas: [], nowAmt: 0, nowN: 0, laterAmt: 0, laterN: 0 };
-    items.forEach(function (m) {
-      var k = dtOf(m);
-      if (k < cfg.at) return;                                   // anterior a la deuda inicial: ya está dentro de ella
-      if (k < d.start) { d.usedStart += uses(m); return; }      // de periodos anteriores
-      if (k >= end) { d.after.push(m); d.afterSum += uses(m); return; }
-      d.rows.push(m); addTotal(d.t, m);
-    });
-    d.used = d.rows.reduce(function (sum, m) { return sum + uses(m); }, d.usedStart);
-    items.forEach(function (m) {
-      if (m.type !== 'c' || m.n < 2 || m.date > corte) return;
-      var st = cuotaState(m, pay);
-      if (st.paid >= m.n) return;
-      d.cuotas.push({ m: m, st: st });
-      d.nowAmt += st.nowAmt; d.nowN += st.now ? 1 : 0; d.laterAmt += st.laterAmt; d.laterN += st.later;
-    });
-    d.avail = cfg.limit - d.used;
-    d.due = Math.max(0, d.used - d.laterAmt);
-    d.closed = cfg.cortes.indexOf(corte) >= 0;
-    return d;
-  }
-  // Fecha de corte sugerida: un mes después del último corte, si ya pasó; si no, hoy
-  function defaultCorte() {
-    var t = todayKey(), lc = lastCorte();
-    if (!lc) return t;
-    var nx = dayIn(addMonths(lc.slice(0, 7), 1), +lc.slice(8, 10));
-    return nx < t ? nx : t;
-  }
-  function payOffset() { return prefs.payOff !== null && prefs.payOff !== undefined ? prefs.payOff : cfg.payOff; }
-  function corteError(k) {
-    if (!validDate(k)) return 'Indica la fecha de corte del periodo.';
-    if (k < cfg.at.slice(0, 10)) return 'La fecha de corte no puede ser anterior a la deuda inicial (' + fmtFull(cfg.at.slice(0, 10)) + ').';
-    if (k > todayKey()) return 'La fecha de corte no puede ser futura.';
-    return '';
-  }
-
   function cuotasInfo() {
-    var q = { active: [], done: [], nowAmt: 0, nowN: 0, laterAmt: 0, laterN: 0 };
+    var q = { active: [], done: [], pendAmt: 0, pendN: 0 };
     items.forEach(function (m) {
-      if (m.type !== 'c' || m.n < 2) return;
+      if (!isCuota(m) || !counts(m)) return;
       var st = cuotaState(m);
-      if (st.paid >= m.n) { q.done.push(m); return; }
-      q.active.push(m); q.nowAmt += st.nowAmt; q.nowN += st.now ? 1 : 0; q.laterAmt += st.laterAmt; q.laterN += st.later;
+      if (!st.pend) { q.done.push(m); return; }
+      q.active.push(m); q.pendAmt += st.pendAmt; q.pendN += st.pend;
     });
     return q;
   }
 
-  // Utilizado = deuda inicial + compras y cargos − abonos, contando desde la fecha de esa deuda.
-  // Disponible = cupo − utilizado. Lo anterior a la deuda inicial ya está dentro de ella y queda como historial.
-  // Total a pagar = utilizado − cuotas que vencen después de este mes.
+  function emptyTotals() { return { T: 0, A: 0, g: 0, a: 0, q: 0, nT: 0, nA: 0, ng: 0, na: 0, nq: 0 }; }
+  function addTotal(t, m) { var k = m.type === 'c' ? m.who : m.type; t[k] += m.amount; t['n' + k]++; }
+  // Utilizado = saldo anterior + compras, cargos y cuotas por cobrar − abonos, contando desde el día «desde».
+  // Disponible = cupo − utilizado.
   function compute() {
-    var on = !!cfg.at, used = on ? cfg.debt : 0, rows = [], since = 0, q = cuotasInfo();
-    var t = { T: 0, A: 0, g: 0, a: 0, nT: 0, nA: 0, ng: 0, na: 0 };
+    var used = cfg.desde ? cfg.saldo : 0, t = emptyTotals(), rows = [];
     items.forEach(function (m) {
-      var counts = on && dtOf(m) >= cfg.at, run = null;
-      if (counts) {
-        used += uses(m); run = cfg.limit - used; since++;
-        var k = m.type === 'c' ? m.who : m.type;
-        t[k] += m.amount; t['n' + k]++;
-      }
-      rows.push({ m: m, counts: counts, run: run });
+      if (!counts(m)) return;
+      used += uses(m); addTotal(t, m); rows.push(m);
     });
-    return { used: used, avail: cfg.limit - used, due: Math.max(0, used - q.laterAmt), rows: rows, since: since, t: t, q: q };
+    return { used: used, avail: cfg.limit - used, t: t, rows: rows };
+  }
+
+  // Borrar los registros anteriores a un día: su monto pasa al saldo anterior, así el utilizado no cambia. De las
+  // compras en cuotas que aún tienen cuotas por cobrar queda solo lo pendiente, como «cuotas por cobrar» desde ese día.
+  // «base» es la configuración de partida (por omisión, la actual).
+  function purgePlan(day, base) {
+    base = base || cfg;
+    var desde = base.desde && base.desde > day ? base.desde : day, saldo = base.saldo;
+    var p = { ups: [], rems: [], from: '', to: '', moved: 0, movedAmt: 0 };
+    items.forEach(function (m) {
+      if (m.date >= day) return;
+      if (!p.from) p.from = m.date;
+      p.to = m.date;
+      var st = isCuota(m) ? cuotaState(m) : null;
+      if (!base.desde || m.date >= base.desde) saldo += uses(m);     // lo que ya estaba fuera del saldo, entra en él
+      if (st && st.pend) {
+        saldo -= st.pendAmt; p.moved++; p.movedAmt += st.pendAmt;
+        p.ups.push(copyOf(m, { type: 'q', date: desde, time: '', amount: st.pendAmt, n: st.pend, prox: st.next, src: 'manual', key: '', card: '' }));
+      } else p.rems.push(m.id);
+    });
+    p.n = p.ups.length + p.rems.length;
+    p.cfg = { limit: base.limit, desde: desde, saldo: saldo, ignored: base.ignored };
+    return p;
   }
 
   function loadLocal() {
@@ -1053,7 +999,8 @@ body { font-size: 17px; line-height: 1.38; }
       if (raw) JSON.parse(raw).forEach(function (p) { var n = norm(p); if (n) list.push(n); });
     } catch (e) {}
     items = list; sortItems();
-    try { cfg = normCfg(JSON.parse(localStorage.getItem(LS_CFG) || 'null')); } catch (e) { cfg = normCfg(null); }
+    try { rawCfg = JSON.parse(localStorage.getItem(LS_CFG) || 'null'); } catch (e) { rawCfg = null; }
+    cfg = normCfg(rawCfg, items);
   }
   function saveLocal() {
     try { localStorage.setItem(LS_KEY, JSON.stringify(items)); localStorage.setItem(LS_CFG, JSON.stringify(cfg)); } catch (e) {}
@@ -1068,7 +1015,6 @@ body { font-size: 17px; line-height: 1.38; }
       prefs.last = prefs.repo && +p.last > 0 && p.reader === READER ? +p.last : 0;   // un lector nuevo repasa todo el buzón
       prefs.note = prefs.repo && p.note && typeof p.note.text === 'string' ? { text: p.note.text.slice(0, 600), at: +p.note.at || 0 } : null;
       prefs.other = prefs.repo && /^\d{4}$/.test(String(p.other || '')) ? String(p.other) : '';
-      prefs.payOff = p.payOff === 0 || p.payOff === 1 || p.payOff === 2 ? p.payOff : null;
       prefs.widget = !!(prefs.repo && p.widget);
       prefs.wm = prefs.widget && +p.wm > 0 ? Math.round(+p.wm) : 0;
       prefs.wSig = prefs.widget && typeof p.wSig === 'string' ? p.wSig.slice(0, 40) : '';
@@ -1104,13 +1050,27 @@ body { font-size: 17px; line-height: 1.38; }
       try {
         for (var i = 0; i < ups.length; i++) await db.collection(COL).doc(ups[i].id).set(toDoc(ups[i]));
         for (var j = 0; j < rems.length; j++) await db.collection(COL).doc(rems[j]).delete();
-        if (newCfg) await db.doc(CFG_PATH).set({ debt: newCfg.debt, at: newCfg.at, limit: newCfg.limit, ignored: newCfg.ignored, cortes: newCfg.cortes || [], payOff: newCfg.payOff || 0 });
+        if (newCfg) await db.doc(CFG_PATH).set({ limit: newCfg.limit, desde: newCfg.desde, saldo: newCfg.saldo, ignored: newCfg.ignored });
       } catch (e) { toast('No se pudo guardar. Intenta de nuevo.'); return false; }
     }
     items = next; sortItems();
-    if (newCfg) cfg = newCfg;
+    if (newCfg) { cfg = newCfg; rawCfg = newCfg; }
     if (mode !== 'db') saveLocal();
     render();
+    return true;
+  }
+  // Aplica un cambio de varios registros y ofrece deshacerlo
+  async function applyUndoable(ups, rems, nextCfg, msg) {
+    var prevCfg = cfg, snap = {}, created = [];
+    ups.forEach(function (u) { var o = find(u.id); if (o) snap[u.id] = copyOf(o); else created.push(u.id); });
+    rems.forEach(function (id) { var o = find(id); if (o) snap[id] = copyOf(o); });
+    busy = true;
+    var ok = await commit(ups, rems, nextCfg);
+    busy = false;
+    if (!ok) return false;
+    toast(msg, 'Deshacer', function () {
+      commit(Object.keys(snap).map(function (k) { return snap[k]; }), created, prevCfg).then(function (r) { if (r) toast('Cambio deshecho'); });
+    }, 9000);
     return true;
   }
 
@@ -1150,21 +1110,42 @@ body { font-size: 17px; line-height: 1.38; }
   }
 
   /* ---------- Traer compras: buzón de avisos o texto pegado ---------- */
+  // Una compra anotada a mano, sin aviso, del mismo día y por el mismo monto (de preferencia, de la misma tarjeta):
+  // el aviso se une a ella en vez de duplicarla.
+  function twinOf(p, taken) {
+    var best = null;
+    items.forEach(function (m) {
+      if (m.type !== 'c' || m.key || (taken && taken[m.id]) || m.date !== p.date || m.amount !== p.amount) return;
+      if (!best || (m.who === p.who && best.who !== p.who)) best = m;
+    });
+    return best;
+  }
+  // Qué hacer con cada compra leída: 'new' se agrega, 'link' se une a una compra anotada a mano, 'known' ya estaba
+  // y 'old' es anterior al saldo (ya está dentro de él)
   function pending(parsed, source) {
-    var have = {}, ign = {}, ups = [], known = 0, back = [];
+    var have = {}, ign = {}, taken = {}, out = { ups: [], added: [], known: 0, back: [], old: 0, linked: 0, st: {} };
     items.forEach(function (m) { if (m.key) have[skel(m.key)] = 1; });
     cfg.ignored.forEach(function (k) { ign[skel(k)] = 1; });
     parsed.found.forEach(function (p) {
       var sk = skel(p.key);
-      if (have[sk]) { known++; return; }
+      if (have[sk]) { out.known++; out.st[p.key] = 'known'; return; }
       have[sk] = 1;
+      if (cfg.desde && p.date < cfg.desde) { out.old++; out.st[p.key] = 'old'; return; }
       if (ign[sk]) {
-        if (source === 'box') { known++; return; }     // se eliminó a propósito: el buzón no la devuelve
-        back.push(sk);                                  // pegarla a mano sí la recupera
+        if (source === 'box') { out.known++; out.st[p.key] = 'known'; return; }   // se eliminó a propósito: el buzón no la devuelve
+        out.back.push(sk);                                                       // pegarla a mano sí la recupera
       }
-      ups.push({ id: 'm' + hash(p.key), type: 'c', date: p.date, time: p.time, desc: p.merchant, amount: p.amount, src: 'mail', key: p.key, card: p.card, who: p.who, n: p.n, ts: Date.now() });
+      var twin = twinOf(p, taken);
+      if (twin) {
+        taken[twin.id] = 1; out.linked++; out.st[p.key] = 'link';
+        out.ups.push(copyOf(twin, { src: 'mail', key: p.key, card: p.card, who: p.who, time: p.time, n: twin.n > 1 ? twin.n : p.n }));
+        return;
+      }
+      out.st[p.key] = 'new';
+      var rec = { id: 'm' + hash(p.key), type: 'c', date: p.date, time: p.time, desc: p.merchant, amount: p.amount, src: 'mail', key: p.key, card: p.card, who: p.who, n: p.n, ts: Date.now() };
+      out.ups.push(rec); out.added.push(rec);
     });
-    return { ups: ups, known: known, back: back };
+    return out;
   }
   function skippedNote(parsed) {
     var parts = [];
@@ -1174,7 +1155,7 @@ body { font-size: 17px; line-height: 1.38; }
   }
   // Agrega las compras leídas que falten y cuenta qué pasó, para que cada origen arme su mensaje
   async function addParsed(parsed, source) {
-    var res = pending(parsed, source), out = { ok: true, found: parsed.found.length, added: 0, sum: 0, old: 0 };
+    var res = pending(parsed, source), out = { ok: true, found: parsed.found.length, added: 0, sum: 0, old: res.old, linked: res.linked };
     if (!res.ups.length) return out;
     var newCfg = res.back.length ? withCfg({ ignored: cfg.ignored.filter(function (x) { return res.back.indexOf(skel(x)) < 0; }) }) : null;
     busy = true;
@@ -1182,15 +1163,16 @@ body { font-size: 17px; line-height: 1.38; }
     busy = false;
     if (!out.ok) return out;
     fresh = {};
-    res.ups.forEach(function (u) { fresh[u.id] = 1; out.sum += u.amount; if (cfg.at && dtOf(u) < cfg.at) out.old++; });
-    out.added = res.ups.length;
+    res.added.forEach(function (u) { fresh[u.id] = 1; out.sum += u.amount; });
+    out.added = res.added.length;
     filter = 'all'; shown = PAGE;
     return out;
   }
   function addedMsg(r, parsed) {
-    var msg = r.added + ' ' + plural(r.added, 'compra nueva', 'compras nuevas') + ' · ' + money(r.sum) + '.';
-    if (r.old) msg += ' ' + r.old + plural(r.old, ' es anterior', ' son anteriores') + ' a la deuda inicial y no ' + plural(r.old, 'cambia', 'cambian') + ' el saldo.';
-    return msg + (parsed ? skippedNote(parsed) : '');
+    var parts = [];
+    if (r.added) parts.push(r.added + ' ' + plural(r.added, 'compra nueva', 'compras nuevas') + ' · ' + money(r.sum) + '.');
+    if (r.linked) parts.push(r.linked + ' ' + plural(r.linked, 'aviso coincidió con una compra anotada a mano y no se duplicó.', 'avisos coincidieron con compras anotadas a mano y no se duplicaron.'));
+    return parts.join(' ') + (parsed ? skippedNote(parsed) : '');
   }
   async function importPaste() {
     if (busy) return;
@@ -1199,7 +1181,9 @@ body { font-size: 17px; line-height: 1.38; }
     var r = await addParsed(parsed, 'paste');
     if (!r.ok) return;
     closeSheet(); render();
-    toast(r.added ? addedMsg(r, parsed) : r.found === 1 ? 'Esa compra ya estaba registrada.' : 'Esas compras ya estaban registradas.', null, null, 5200);
+    toast(r.added || r.linked ? addedMsg(r, parsed)
+      : r.old === r.found ? (r.found === 1 ? 'Esa compra es anterior' : 'Esas compras son anteriores') + ' al ' + fmt(cfg.desde) + ': ya ' + plural(r.found, 'está', 'están') + ' dentro del saldo anterior.'
+      : r.found === 1 ? 'Esa compra ya estaba registrada.' : 'Esas compras ya estaban registradas.', null, null, 5200);
   }
 
   // Buzón: un repositorio privado de GitHub donde Atajos deja cada correo del banco como un «issue».
@@ -1241,7 +1225,9 @@ body { font-size: 17px; line-height: 1.38; }
     if (p.found.length) {
       var f = p.found[0], fk = skel(f.key), what = f.merchant + ' · ' + money(f.amount) + ' · ' + WHO[f.who];
       if (items.some(function (m) { return m.key && skel(m.key) === fk; })) return { k: 'ok', label: 'Compra registrada', detail: what };
+      if (cfg.desde && f.date < cfg.desde) return { k: 'skip', label: 'Compra anterior al ' + fmt(cfg.desde), detail: what + '. Ya está dentro del saldo anterior.' };
       if (cfg.ignored.some(function (k) { return skel(k) === fk; })) return { k: 'skip', label: 'Compra que eliminaste', detail: what };
+      if (twinOf(f)) return { k: 'ok', label: 'Compra anotada a mano', detail: what + '. Se une a su aviso en la próxima lectura.' };
       return { k: 'new', label: 'Compra sin registrar todavía', detail: what + '. Toca «Leer el buzón ahora», más abajo.' };
     }
     var sk = p.skip[0];
@@ -1326,7 +1312,7 @@ body { font-size: 17px; line-height: 1.38; }
     } catch (e) { syncErr = errCode(e); }
     syncing = false;
     render();
-    if (r && r.ok && r.added) toast(addedMsg(r, manual ? box.parsed : null), null, null, 5200);
+    if (r && r.ok && (r.added || r.linked)) toast(addedMsg(r, manual ? box.parsed : null), null, null, 5200);
     else if (manual && r && r.ok) toast('Al día: no hay compras nuevas con la tarjeta.' + skippedNote(box.parsed), 'Ver buzón', function () { openSheet('box'); }, 6500);
     else if (manual && syncErr) toast(errMsg(syncErr), null, null, 6000);
   }
@@ -1363,24 +1349,26 @@ body { font-size: 17px; line-height: 1.38; }
     syncing = false; syncErr = ''; lastTry = Date.now();
     openSheet('box');   // ahora muestra el estado del buzón y la automatización de Atajos
     render();
-    toast('Buzón conectado. ' + (r.added ? addedMsg(r, box.parsed) : box.parsed.found.length ? 'Sus compras ya estaban registradas.' : 'Aún no tiene avisos de la tarjeta: llegarán con tu próxima compra.'), null, null, 6500);
+    toast('Buzón conectado. ' + (r.added || r.linked ? addedMsg(r, box.parsed) : box.parsed.found.length ? 'Sus compras ya estaban registradas.' : 'Aún no tiene avisos de la tarjeta: llegarán con tu próxima compra.'), null, null, 6500);
   }
 
   /* ---------- Widget de la pantalla de inicio (app Scriptable) ---------- */
-  // Una app web no puede crear widgets. Master publica el utilizado, las compras en cuotas y las últimas compras en un
-  // hito del buzón, y el script de Scriptable calcula el total a pagar del mes y lo dibuja, sumando las compras que
-  // llegaron al buzón después. Solo se publica si se activa el widget.
+  // Una app web no puede crear widgets. Master publica el utilizado y las últimas compras en un hito del buzón, y el
+  // script de Scriptable los dibuja, sumando las compras que llegaron al buzón después. Solo se publica si se activa el widget.
   var widgetTimer = 0, widgetBusy = false, widgetErr = '';
   function widgetState() {
-    var c = compute(), cut = dayKey(new Date(Date.now() - 5 * 86400000)), keys = [], buys = [];
+    var c = compute(), q = cuotasInfo(), cut = dayKey(new Date(Date.now() - 5 * 86400000)), keys = [], buys = [];
     for (var i = items.length - 1; i >= 0 && buys.length < 3; i--) {
       if (items[i].type === 'c') buys.push({ d: items[i].date, h: items[i].time, c: items[i].desc, m: items[i].amount, w: items[i].who });
     }
     items.forEach(function (m) { if (m.key && m.date >= cut) keys.push(skel(m.key)); });      // compras recientes ya contadas
     cfg.ignored.slice(-80).forEach(function (k) { keys.push(skel(k)); });                      // y las eliminadas a propósito
-    // Van las cuotas y no el total a pagar ya calculado: así el widget lo recalcula solo cuando cambia el mes
-    return { v: 1, app: 'master', used: cfg.at ? c.used : null, limit: cfg.limit, at: cfg.at, read: prefs.last || 0, cards: CARDS,
-      cuotas: c.q.active.map(function (m) { return { a: m.amount, n: m.n, f: m.first }; }), ult: buys, keys: keys };
+    return { v: 2, app: 'master', used: cfg.desde ? c.used : null, limit: cfg.limit, desde: cfg.desde,
+      at: cfg.desde ? cfg.desde + 'T00:00' : '',   // para Panel Casa: los avisos anteriores ya están en el saldo
+      read: prefs.last || 0, cards: CARDS,
+      // Para Panel Casa: lo que falta por cobrar de cada compra en cuotas, con el mes de pago de la próxima cuota
+      cuotas: q.active.map(function (m) { var st = cuotaState(m); return { a: st.pendAmt, n: st.pend, f: addMonths(st.next, 1) }; }),
+      ult: buys, keys: keys };
   }
   async function ghJson(method, path, body) {
     var res = await fetch(API + prefs.repo + path, {
@@ -1434,14 +1422,14 @@ body { font-size: 17px; line-height: 1.38; }
 
   function hero(c) {
     var h = '<section class="hero" aria-label="Cupo de la tarjeta">' + I_ART + '<div class="hero-top"><span class="eyebrow">Disponible</span>';
-    if (!loading && cfg.at) h += '<button class="hero-btn" data-act="setup">Ajustar</button>';
+    if (!loading && cfg.desde) h += '<button class="hero-btn" data-act="setup">Ajustar</button>';
     h += '</div>';
     if (loading) {
       h += '<div class="total word">Cargando…</div><p class="hero-note">Buscando tus movimientos.</p>';
-    } else if (!cfg.at) {
+    } else if (!cfg.desde) {
       h += '<div class="total word">Sin definir</div>' +
-        '<p class="hero-note">Para partir, escribe la deuda pendiente que muestra hoy el banco. Con el cupo de ' + money(cfg.limit) + ', la app calcula el disponible.</p>' +
-        '<button class="hero-cta" data-act="setup">Ingresar deuda pendiente</button>';
+        '<p class="hero-note">Para partir, escribe el cupo de la tarjeta y el utilizado que muestra hoy la app del banco.</p>' +
+        '<button class="hero-cta" data-act="setup">Ingresar cupo y utilizado</button>';
     } else {
       var txt = money(c.avail);
       var size = txt.length <= 8 ? 'xl' : txt.length <= 10 ? 'lg' : txt.length <= 11 ? 'md' : 'sm';
@@ -1449,11 +1437,10 @@ body { font-size: 17px; line-height: 1.38; }
       var pctTxt = ratio <= 0 ? '0%' : ratio < 0.01 ? 'menos del 1%' : Math.round(ratio * 100) + '%';
       h += '<div class="total ' + size + '">' + txt + '</div>' +
         '<div class="meter' + (pct <= 0 ? ' zero' : '') + (c.avail < 0 ? ' full' : '') + '" role="img" aria-label="Utilizado ' + pctTxt + ' del cupo"><i style="width:' + pct.toFixed(2) + '%"></i></div>';
-      if (c.avail < 0) h += '<p class="hero-note warn">Lo utilizado supera el cupo en ' + money(-c.avail) + '. Revisa si falta un abono o ajusta la deuda.</p>';
-      else if (c.used < 0) h += '<p class="hero-note warn">Los abonos superan la deuda: hay ' + money(-c.used) + ' a favor. Revisa los montos o ajusta la deuda.</p>';
-      else h += '<p class="hero-note">Utilizado ' + pctTxt + ' del cupo de ' + money(cfg.limit) + '</p>';
-      h += '<dl class="hero-stats"><div><dt>Utilizado</dt><dd>' + money(c.used) + '</dd></div><div><dt>Total a pagar</dt><dd>' + money(c.due) + '</dd>' +
-        (c.q.laterAmt > 0 ? '<small>Sin ' + money(c.q.laterAmt) + ' en cuotas que vencen después</small>' : '') + '</div></dl>';
+      if (c.avail < 0) h += '<p class="hero-note warn">Lo utilizado supera el cupo en ' + money(-c.avail) + '. Revisa si falta un abono o toca «Ajustar».</p>';
+      else if (c.used < 0) h += '<p class="hero-note">Tienes ' + money(-c.used) + ' a favor en la tarjeta.</p>';
+      else h += '<p class="hero-note">Usas el ' + pctTxt + ' del cupo</p>';
+      h += '<dl class="hero-stats"><div><dt>Utilizado</dt><dd>' + money(c.used) + '</dd></div><div><dt>Cupo</dt><dd>' + money(cfg.limit) + '</dd></div></dl>';
     }
     return h + '</section>';
   }
@@ -1466,7 +1453,7 @@ body { font-size: 17px; line-height: 1.38; }
     var h = '<div class="actions">' + main +
       '<button class="btn ghost big" data-act="add" data-t="c">' + I_BAG + 'Compra</button>' +
       '<button class="btn ghost big" data-act="add" data-t="g" aria-label="Anotar un cargo: resta del disponible">' + I_MINUS + 'Cargo</button>' +
-      '<button class="btn plus big" data-act="add" data-t="a" aria-label="Anotar un abono: suma al disponible">' + I_PLUS + 'Abono</button></div>';
+      '<button class="btn plus big" data-act="add" data-t="a" aria-label="Anotar un abono o pago: suma al disponible">' + I_PLUS + 'Abono</button></div>';
     if (!canSync) {
       h += '<p class="sync plain">Aquí las compras se agregan pegando el aviso. La lectura automática funciona en la app instalada desde GitHub.</p>';
     } else if (prefs.repo) {
@@ -1486,21 +1473,21 @@ body { font-size: 17px; line-height: 1.38; }
         '<span class="step-t"><b>' + title + '</b><span>' + text + '</span></span></button></li>';
     }
     return '<section class="sec" aria-label="Primeros pasos"><div class="sec-head"><h2>Primeros pasos</h2></div><ol class="steps">' +
-      step(1, 'setup', !!cfg.at, 'Ingresa la deuda pendiente', 'El cupo utilizado que muestra hoy la app del banco.') +
+      step(1, 'setup', !!cfg.desde, 'Ingresa el cupo y el utilizado', 'Lo que muestra hoy la app del banco.') +
       (canSync ? step(2, 'box', !!prefs.repo, 'Conecta el buzón de avisos', 'El mismo repositorio privado de GitHub que usa FAN.') +
                  step(3, 'box', false, 'Revisa la automatización de Atajos', 'Es la misma de FAN: solo con el remitente del banco, sin condición de asunto.')
                : step(2, 'paste', false, 'Pega tu primer aviso', 'Copia el texto del correo del banco y la app extrae los datos.')) +
       '</ol></section>';
   }
 
-  function totalsBlock() {
-    var op = openPeriod(), t = op.t, sum = t.T + t.A;
+  function totalsBlock(c) {
+    var t = c.t, sum = t.T + t.A;
     function tile(k) {
       var n = t['n' + k];
       return '<div class="tile ' + k + '"><span class="who"><i></i>' + WHO[k] + '</span><b>' + money(t[k]) + '</b>' +
         '<small>' + (n ? n + ' ' + plural(n, 'compra', 'compras') : 'Sin compras') + (DIG[k] ? ' · ··' + DIG[k] : '') + '</small></div>';
     }
-    var h = '<section class="sec" aria-label="Totales por tarjeta"><div class="sec-head"><h2>Por tarjeta</h2><span class="sec-note">' + (op.prev ? 'Periodo desde el ' + fmt(op.start.slice(0, 10)) : 'Desde el ' + fmt(cfg.at.slice(0, 10))) + '</span></div>';
+    var h = '<section class="sec" aria-label="Totales por tarjeta"><div class="sec-head"><h2>Por tarjeta</h2><span class="sec-note">Desde el ' + fmt(cfg.desde) + '</span></div>';
     if (sum > 0) {
       h += '<div class="split" role="img" aria-label="Titular ' + Math.round(t.T / sum * 100) + '%, Adicional ' + Math.round(t.A / sum * 100) + '% de las compras">' +
         (t.T ? '<i class="T" style="flex:' + t.T + ' 1 0"></i>' : '') + (t.A ? '<i class="A" style="flex:' + t.A + ' 1 0"></i>' : '') + '</div>';
@@ -1513,37 +1500,42 @@ body { font-size: 17px; line-height: 1.38; }
   }
 
   function cuotaBar(m, st) {
-    var h = '<div class="cq-bar" role="img" aria-label="' + st.paid + ' de ' + m.n + ' cuotas pagadas' + (st.now ? ', la cuota ' + st.now + ' se paga este mes' : '') + '">';
-    if (m.n <= 24) { for (var i = 1; i <= m.n; i++) h += '<i' + (i <= st.paid ? ' class="on"' : i === st.now ? ' class="cur"' : '') + '></i>'; }
-    else h += (st.paid ? '<i class="on" style="flex:' + st.paid + ' 1 0"></i>' : '') + (st.now ? '<i class="cur" style="flex:1 1 0"></i>' : '') + (st.later ? '<i style="flex:' + st.later + ' 1 0"></i>' : '');
+    var h = '<div class="cq-bar" role="img" aria-label="' + st.done + ' de ' + m.n + ' ' + plural(m.n, 'cuota cobrada', 'cuotas cobradas') + '">';
+    if (m.n <= 24) { for (var i = 1; i <= m.n; i++) h += '<i' + (i <= st.done ? ' class="on"' : i === st.done + 1 ? ' class="cur"' : '') + '></i>'; }
+    else h += (st.done ? '<i class="on" style="flex:' + st.done + ' 1 0"></i>' : '') + (st.pend ? '<i class="cur" style="flex:1 1 0"></i>' : '') + (st.pend > 1 ? '<i style="flex:' + (st.pend - 1) + ' 1 0"></i>' : '');
     return h + '</div>';
   }
+  function cuotaWhen(st) {
+    if (!st.pend) return 'Se cobró hasta la facturación de ' + monthName(st.end);
+    return st.pend === 1 ? 'Se cobra en la facturación de ' + monthName(st.next)
+      : 'Próxima en la facturación de ' + monthName(st.next) + ' · última en la de ' + monthName(st.end);
+  }
   function cuotaCard(m) {
-    var st = cuotaState(m), done = st.paid >= m.n;
+    var st = cuotaState(m), done = !st.pend, q = m.type === 'q';
     return '<li class="cq' + (done ? ' done' : '') + '">' +
-      '<button class="cq-head" data-act="edit" data-id="' + m.id + '" aria-label="Editar compra en cuotas: ' + esc(m.desc) + '">' +
+      '<button class="cq-head" data-act="edit" data-id="' + m.id + '" aria-label="Editar: ' + esc(m.desc) + '">' +
       '<span class="store">' + esc(m.desc) + '</span><span class="amt">' + money(m.amount) + '</span>' +
-      '<span class="meta"><span class="pill ' + m.who + '">' + WHO[m.who] + '</span>' + fmtFull(m.date) + ' · ' + m.n + ' cuotas de ' + money(cuotaVal(m)) + '</span></button>' +
-      cuotaBar(m, st) +
-      '<dl class="cq-nums"><div><dt>Pagadas</dt><dd>' + st.paid + ' de ' + m.n + '</dd></div>' +
-      '<div><dt>Este mes' + (st.now ? ' · cuota ' + st.now : '') + '</dt><dd>' + money(st.nowAmt) + '</dd></div>' +
-      '<div><dt>Después' + (st.later ? ' · ' + st.later + ' ' + plural(st.later, 'cuota', 'cuotas') : '') + '</dt><dd>' + money(st.laterAmt) + '</dd></div></dl>' +
-      '<p class="cq-when">' + (done ? 'Terminó en ' + monthName(st.end) : 'Cuota 1 en ' + monthName(m.first) + ' · última en ' + monthName(st.end)) + '</p></li>';
+      '<span class="meta"><span class="pill ' + m.who + '">' + WHO[m.who] + '</span>' +
+      (q ? 'Cuotas de una compra anterior' : fmtFull(m.date) + ' · ' + m.n + ' cuotas de ' + money(cuotaVal(m))) + '</span></button>' +
+      (m.n > 1 ? cuotaBar(m, st) : '') +
+      '<dl class="cq-nums">' + (q ? '' : '<div><dt>Cobradas</dt><dd>' + st.done + ' de ' + m.n + '</dd></div>') +
+      '<div><dt>Por cobrar' + (st.pend ? ' · ' + st.pend + ' ' + plural(st.pend, 'cuota', 'cuotas') : '') + '</dt><dd>' + money(st.pendAmt) + '</dd></div>' +
+      (st.pend > 1 ? '<div><dt>Próxima cuota</dt><dd>' + money(st.nextAmt) + '</dd></div>' : '') + '</dl>' +
+      '<p class="cq-when">' + cuotaWhen(st) + '</p></li>';
   }
   function cuotasBlock() {
     var q = cuotasInfo(), any = q.active.length + q.done.length;
-    var h = '<section class="sec" aria-label="Compras en cuotas"><div class="sec-head"><h2>Compras en cuotas</h2>' +
-      '<button class="btn ghost small" data-act="add-cuotas">' + I_PLUS + 'Agregar</button></div>';
+    var h = '<section class="sec" aria-label="Cuotas pendientes"><div class="sec-head"><h2>Cuotas pendientes</h2>' +
+      '<button class="btn ghost small" data-act="add-q">' + I_PLUS + 'Agregar</button></div>';
     if (!any) {
-      return h + '<p class="empty">Aún no hay compras en cuotas. Agrega una con el monto total y el número de cuotas. Si llegó por un aviso, tócala en Movimientos e indica sus cuotas.</p></section>';
+      return h + '<p class="empty">No hay cuotas pendientes. Una compra en cuotas se anota como compra, indicando sus cuotas. Las cuotas que quedan de compras anteriores se agregan aquí.</p></section>';
     }
     if (q.active.length) {
-      h += '<dl class="cq-total"><div><dt>Cuotas de este mes</dt><dd>' + money(q.nowAmt) + '</dd></div><div><dt>Vencen después</dt><dd>' + money(q.laterAmt) + '</dd></div>' +
-        '<div><dt>Compras en curso</dt><dd>' + q.active.length + '</dd></div><div><dt>Cuotas por vencer</dt><dd>' + q.laterN + '</dd></div></dl>';
+      h += '<dl class="cq-total"><div><dt>Por cobrar</dt><dd>' + money(q.pendAmt) + '</dd></div><div><dt>Cuotas</dt><dd>' + q.pendN + '</dd></div></dl>';
       h += '<ul class="cuotas">' + q.active.slice().reverse().map(cuotaCard).join('') + '</ul>';
-      h += '<p class="muted fine">Las cuotas que vencen después de ' + MESL[+thisMonth().slice(5, 7) - 1] + ' ocupan cupo, pero no entran en el total a pagar. La app las cuenta por mes, a partir del mes de la cuota 1.</p>';
+      h += '<p class="muted fine">Cada cuota se cobra en la facturación de su mes. Lo que falta por cobrar ya está dentro del utilizado.</p>';
     } else {
-      h += '<p class="empty">No quedan cuotas pendientes.</p>';
+      h += '<p class="empty">No quedan cuotas por cobrar.</p>';
     }
     if (q.done.length) {
       h += '<details class="fold" id="d-done"><summary>Terminadas (' + q.done.length + ')</summary><ul class="cuotas">' + q.done.slice().reverse().map(cuotaCard).join('') + '</ul></details>';
@@ -1551,27 +1543,28 @@ body { font-size: 17px; line-height: 1.38; }
     return h + '</section>';
   }
 
-  function rowHtml(r) {
-    var m = r.m, isIn = m.type === 'a';
+  function rowHtml(m) {
+    var isIn = m.type === 'a', on = counts(m);
     var icon = isIn ? I_IN : m.type === 'g' ? I_OUT : I_BAG;
     var what = isIn ? 'Abono' : m.type === 'g' ? 'Cargo' : 'Compra';
     var amt = (isIn ? '+' : '−') + '$' + dots(m.amount);
-    var meta = dayLabel(m.date) + ' · ' + m.time + (m.n > 1 ? ' · ' + m.n + ' cuotas' : '');
+    var meta = dayLabel(m.date) + (m.time ? ' · ' + m.time : '') + (m.n > 1 ? ' · ' + m.n + ' cuotas' : '');
     var tag = m.type === 'c' ? '<span class="pill ' + m.who + '">' + WHO[m.who] + '</span>' : '<span class="kind">' + what + '</span>';
-    return '<li><button class="row' + (r.counts || !cfg.at ? '' : ' old') + '" data-act="edit" data-id="' + m.id + '" aria-label="Editar ' + what.toLowerCase() + ': ' + esc(m.desc) + ', ' + amt + ', ' + fmt(m.date) + (m.who ? ', ' + WHO[m.who] : '') + '">' +
+    return '<li><button class="row' + (on ? '' : ' old') + '" data-act="edit" data-id="' + m.id + '" aria-label="Editar ' + what.toLowerCase() + ': ' + esc(m.desc) + ', ' + amt + ', ' + fmt(m.date) + (m.who ? ', ' + WHO[m.who] : '') + '">' +
       '<span class="ico' + (isIn ? ' in' : '') + '">' + icon + '</span>' +
       '<span class="info"><span class="store">' + esc(m.desc) + (fresh[m.id] ? '<span class="pill new">Nueva</span>' : '') + '</span><span class="meta">' + meta + '</span></span>' +
       '<span class="nums"><span class="amt' + (isIn ? ' in' : '') + '">' + amt + '</span>' + tag + '</span></button></li>';
   }
 
   function matches(m) { return filter === 'all' || (filter === 'o' ? m.type !== 'c' : m.type === 'c' && m.who === filter); }
-  function listBlock(c) {
-    var has = { T: 0, A: 0, o: 0 };
-    items.forEach(function (m) { has[m.type === 'c' ? m.who : 'o']++; });
+  // Movimientos: compras, cargos y abonos (las cuotas por cobrar de compras anteriores están en «Cuotas pendientes»)
+  function listBlock() {
+    var list = items.filter(function (m) { return m.type !== 'q'; }), has = { T: 0, A: 0, o: 0 };
+    list.forEach(function (m) { has[m.type === 'c' ? m.who : 'o']++; });
     var kinds = (has.T ? 1 : 0) + (has.A ? 1 : 0) + (has.o ? 1 : 0);
 
     var h = '<section class="sec" aria-label="Movimientos"><div class="sec-head"><h2>Movimientos</h2>';
-    if (items.length > 1) h += '<button class="btn ghost small" data-act="order" aria-label="Cambiar el orden del listado">' + I_SORT + (prefs.order === 'desc' ? 'Recientes primero' : 'Antiguos primero') + '</button>';
+    if (list.length > 1) h += '<button class="btn ghost small" data-act="order" aria-label="Cambiar el orden del listado">' + I_SORT + (prefs.order === 'desc' ? 'Recientes primero' : 'Antiguos primero') + '</button>';
     h += '</div>';
     if (kinds < 2 || (filter !== 'all' && !has[filter])) filter = 'all';
     if (kinds > 1) {
@@ -1580,25 +1573,20 @@ body { font-size: 17px; line-height: 1.38; }
           return f[2] ? '<button class="chip" data-act="filter" data-f="' + f[0] + '" aria-pressed="' + (filter === f[0]) + '">' + f[1] + '</button>' : '';
         }).join('') + '</div>';
     }
+    if (!list.length) return h + '<p class="empty">Aún no hay movimientos desde el ' + fmt(cfg.desde || todayKey()) + '.</p></section>';
 
-    // Lista en orden cronológico, con las marcas de la deuda inicial y de cada corte de periodo en su lugar
-    var marks = [], mi = 0, seq = [];
-    if (cfg.at) marks.push({ k: cfg.at, h: '<li class="anchor"><span>Deuda inicial ' + money(cfg.debt) + ' · ' + fmtAt(cfg.at) + '</span></li>' });
-    cortesOn().forEach(function (k) { marks.push({ k: corteEnd(k), h: '<li class="anchor"><span>Corte del periodo · ' + fmt(k) + '</span></li>' }); });
-    marks.sort(function (a, b) { return a.k < b.k ? -1 : a.k > b.k ? 1 : 0; });
-    c.rows.forEach(function (r) {
-      while (mi < marks.length && dtOf(r.m) >= marks[mi].k) seq.push(marks[mi++]);
-      if (matches(r.m)) seq.push(r);
+    // Lista en orden cronológico, con la marca del saldo anterior en su lugar
+    var seq = [], mark = cfg.desde ? { h: '<li class="anchor"><span>Saldo anterior al ' + fmt(cfg.desde) + ' · ' + money(cfg.saldo) + '</span></li>' } : null, put = false;
+    list.forEach(function (m) {
+      if (mark && !put && m.date >= cfg.desde) { seq.push(mark); put = true; }
+      if (matches(m)) seq.push(m);
     });
-    while (mi < marks.length) seq.push(marks[mi++]);
+    if (mark && !put) seq.push(mark);
     if (prefs.order === 'desc') seq.reverse();
     var total = seq.length, cut = seq.slice(0, shown);
-    h += '<ul class="list">';
-    cut.forEach(function (r) {
-      h += r.m ? rowHtml(r) : r.h;
-    });
-    h += '</ul>';
+    h += '<ul class="list">' + cut.map(function (r) { return r.h || rowHtml(r); }).join('') + '</ul>';
     if (total > shown) h += '<button class="btn ghost block" data-act="more">Ver más movimientos (' + (total - shown) + ')</button>';
+    if (cfg.desde) h += '<button class="btn ghost block" data-act="purge">Borrar registros anteriores a una fecha</button>';
     return h + '</section>';
   }
 
@@ -1608,7 +1596,7 @@ body { font-size: 17px; line-height: 1.38; }
       '<p class="muted">' + where + ' Copia un respaldo para guardarlo en Notas o llevarlo a otro equipo.</p>' +
       '<textarea id="bk-text" rows="4" spellcheck="false" aria-label="Texto del respaldo"></textarea>' +
       '<div class="bk-actions"><button class="btn ghost" data-act="bk-copy">Copiar respaldo</button><button class="btn ghost" data-act="bk-restore">Restaurar desde el texto</button></div>' +
-      '<button class="btn danger block" data-act="wipe"' + (items.length || cfg.at ? '' : ' disabled') + '>Borrar todos los datos</button></details>';
+      '<button class="btn danger block" data-act="wipe"' + (items.length || cfg.desde ? '' : ' disabled') + '>Borrar todos los datos</button></details>';
   }
 
   function render() {
@@ -1616,7 +1604,7 @@ body { font-size: 17px; line-height: 1.38; }
     var h = header() + hero(c);
     if (!loading) {
       h += actions();
-      if (items.length) h += (cfg.at ? totalsBlock() : '') + cuotasBlock() + listBlock(c);
+      if (items.length) h += (cfg.desde ? totalsBlock(c) : '') + cuotasBlock() + listBlock();
       else h += startBlock();
       h += dataBlock();
     }
@@ -1634,95 +1622,154 @@ body { font-size: 17px; line-height: 1.38; }
   function moneyField(id, label, value, hint) {
     return '<label class="field"><span id="' + id + '-label">' + label + '</span><div class="price-wrap"><b>$</b><input type="text" id="' + id + '" inputmode="numeric" autocomplete="off" enterkeyhint="done" placeholder="' + hint + '" value="' + value + '"></div></label>';
   }
-  function stepField(id, label, value, hintId) {
+  function stepField(id, label, value) {
     return '<div class="field"><span id="' + id + '-label">' + label + '</span><div class="stepper">' +
       '<button type="button" data-act="step" data-for="' + id + '" data-d="-1" aria-label="Menos">' + I_MINUS + '</button>' +
       '<input type="text" id="' + id + '" inputmode="numeric" autocomplete="off" maxlength="2" aria-labelledby="' + id + '-label" value="' + value + '">' +
-      '<button type="button" data-act="step" data-for="' + id + '" data-d="1" aria-label="Más">' + I_PLUS + '</button></div>' +
-      (hintId ? '<span class="hint" id="' + hintId + '"></span>' : '') + '</div>';
+      '<button type="button" data-act="step" data-for="' + id + '" data-d="1" aria-label="Más">' + I_PLUS + '</button></div></div>';
   }
-  function anchorNote(date, time) {
-    return cfg.at && validDate(date) && TIME_RE.test(time) && date + 'T' + time < cfg.at
-      ? 'Es anterior a la deuda inicial (' + fmtAt(cfg.at) + '): ya está incluida en ella y no cambia el saldo.' : '';
+  function beforeNote(date) {
+    return cfg.desde && validDate(date) && date < cfg.desde
+      ? 'Es anterior al ' + fmtFull(cfg.desde) + ': lo anterior a ese día ya está dentro del saldo anterior.' : '';
   }
   var KIND = {
-    c: { hint: 'Compra con la tarjeta. Resta del disponible.', ph: 'Nombre del comercio', label: 'Comercio', save: 'Guardar compra' },
-    g: { hint: 'Un cobro de la tarjeta: comisión, interés, seguro, impuesto. Resta del disponible.', ph: 'Ej. Comisión mensual, intereses', label: 'Descripción', save: 'Guardar cargo' },
-    a: { hint: 'Un pago de la tarjeta o una devolución. Suma al disponible.', ph: 'Ej. Pago de la tarjeta, devolución', label: 'Descripción', save: 'Guardar abono' }
+    c: { hint: 'Compra con la tarjeta. Resta del disponible.', ph: 'Nombre del comercio', label: 'Comercio', amount: 'Monto total', save: 'Guardar compra',
+      n: 'Cuotas', month: 'La cuota 1 se cobra en la facturación de' },
+    g: { hint: 'Un cobro de la tarjeta: comisión, interés, seguro, impuesto. Resta del disponible.', ph: 'Ej. Comisión mensual, intereses', label: 'Descripción', amount: 'Monto', save: 'Guardar cargo' },
+    a: { hint: 'Un pago de la tarjeta o una devolución. Suma al disponible.', ph: 'Ej. Pago de la tarjeta, devolución', label: 'Descripción', amount: 'Monto', save: 'Guardar abono' },
+    q: { hint: 'Lo que falta por cobrar de una compra en cuotas hecha antes del saldo anterior. Ocupa cupo hasta que se paga.', ph: 'Nombre del comercio', label: 'Comercio',
+      amount: 'Monto por cobrar', save: 'Guardar cuotas', n: 'Cuotas por cobrar', month: 'La próxima se cobra en la facturación de' }
   };
 
   function sheetMove(s) {
     var today = todayKey(), p = s.id ? find(s.id) : null;
-    var type = s.type, mail = !!p && p.src === 'mail', k = KIND[type];
-    var title = p ? (mail ? 'Compra del aviso' : type === 'a' ? 'Editar abono' : type === 'g' ? 'Editar cargo' : 'Editar compra') : 'Anotar movimiento';
-    var dateV = p ? p.date : today, timeV = p ? p.time : nowTime();
-    var note = anchorNote(dateV, timeV), after = '';
-    if (p) compute().rows.forEach(function (r) { if (r.m.id === p.id && r.run !== null) after = ' Después de este movimiento el disponible quedó en <strong>' + money(r.run) + '</strong>.'; });
+    var type = s.type, mail = !!p && p.src === 'mail', k = KIND[type], q = type === 'q';
+    var title = p ? (mail ? 'Compra del aviso' : q ? 'Cuotas por cobrar' : type === 'a' ? 'Editar abono' : type === 'g' ? 'Editar cargo' : 'Editar compra') : q ? 'Cuotas por cobrar' : 'Anotar movimiento';
+    var dateV = p ? p.date : today, timeV = p ? p.time : '';
+    var note = beforeNote(dateV);
     var h = '<form class="panel" id="sheet-form" novalidate role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">' +
       '<h2 id="sheet-title">' + title + '</h2>';
-    if (mail) h += '<p class="sub">Leída del aviso del banco' + (p.card ? ', tarjeta ··' + p.card : '') + '. Puedes corregirla, darle un nombre más claro o indicar sus cuotas.' + after + '</p>';
-    else if (p && after) h += '<p class="sub">' + after.trim() + '</p>';
+    if (mail) h += '<p class="sub">Leída del aviso del banco' + (p.card ? ', tarjeta ··' + p.card : '') + '. Puedes corregirla, darle un nombre más claro o indicar sus cuotas.</p>';
+    else if (q) h += '<p class="sub">' + k.hint + '</p>';
     else if (!p) h += '<div class="seg three" role="group" aria-label="Tipo de movimiento">' +
       '<button type="button" data-act="type" data-t="c" aria-pressed="' + (type === 'c') + '">Compra</button>' +
       '<button type="button" data-act="type" data-t="g" aria-pressed="' + (type === 'g') + '">− Cargo</button>' +
       '<button type="button" data-act="type" data-t="a" aria-pressed="' + (type === 'a') + '">+ Abono</button></div>' +
       '<p class="sub" id="f-hint">' + k.hint + '</p>';
-    h += moneyField('f-amount', type === 'c' ? 'Monto total' : 'Monto', p ? dots(p.amount) : '', 'Ej. 150.000') +
+    h += moneyField('f-amount', k.amount, p ? dots(p.amount) : '', 'Ej. 150.000') +
       '<label class="field"><span id="f-desc-label">' + k.label + '</span><input type="text" id="f-desc" list="f-descs" maxlength="60" autocomplete="off" autocapitalize="sentences" enterkeyhint="done" placeholder="' + k.ph + '" value="' + (p ? esc(p.desc) : '') + '"></label>' +
       '<datalist id="f-descs">' + descOptions(type).map(function (x) { return '<option value="' + esc(x) + '"></option>'; }).join('') + '</datalist>' +
-      '<div class="stack" id="f-buy"' + (type === 'c' ? '' : ' hidden') + '>' +
-      '<div class="field"><span>Tarjeta</span><div class="seg" role="group" aria-label="Tarjeta de la compra">' +
+      '<div class="stack" id="f-buy"' + (type === 'c' || q ? '' : ' hidden') + '>' +
+      '<div class="field"><span>Tarjeta</span><div class="seg" role="group" aria-label="Tarjeta">' +
       ['T', 'A'].map(function (w) { return '<button type="button" data-act="who" data-w="' + w + '" aria-pressed="' + (s.who === w) + '">' + WHO[w] + '</button>'; }).join('') + '</div></div>' +
-      stepField('f-n', 'Cuotas', p ? p.n : s.n, '') +
-      '<div class="field" id="f-first-wrap"><span id="f-first-label">La cuota 1 se paga en</span><div class="stepper">' +
+      stepField('f-n', q ? KIND.q.n : KIND.c.n, p ? p.n : s.n) +
+      '<div class="field" id="f-prox-wrap"><span id="f-prox-label">' + (q ? KIND.q.month : KIND.c.month) + '</span><div class="stepper">' +
       '<button type="button" data-act="month" data-d="-1" aria-label="Mes anterior">' + I_MINUS + '</button>' +
-      '<output class="step-val" id="f-first" aria-labelledby="f-first-label">' + monthName(s.first) + '</output>' +
+      '<output class="step-val" id="f-prox" aria-labelledby="f-prox-label">' + monthName(s.prox) + '</output>' +
       '<button type="button" data-act="month" data-d="1" aria-label="Mes siguiente">' + I_PLUS + '</button></div></div>' +
-      '<p class="note" id="f-cuota"></p></div>' +
-      '<div class="pair"><label class="field"><span>Fecha</span><input type="date" id="f-date" value="' + dateV + '" max="' + today + '" required></label>' +
-      '<label class="field"><span>Hora</span><input type="time" id="f-time" value="' + timeV + '" required></label></div>' +
-      '<p class="note" id="f-note"' + (note ? '' : ' hidden') + '>' + note + '</p>' +
-      '<p class="err" id="f-err" role="alert" hidden></p>' +
+      '<p class="note" id="f-cuota"></p></div>';
+    if (!q) {
+      h += '<div class="pair"><label class="field"><span>Fecha</span><input type="date" id="f-date" value="' + dateV + '"' + (cfg.desde && !(p && p.date < cfg.desde) ? ' min="' + cfg.desde + '"' : '') + ' max="' + today + '" required></label>' +
+        '<label class="field"><span>Hora (opcional)</span><input type="time" id="f-time" value="' + timeV + '"></label></div>' +
+        '<p class="note" id="f-note"' + (note ? '' : ' hidden') + '>' + note + '</p>';
+    }
+    h += '<p class="err" id="f-err" role="alert" hidden></p>' +
       '<div class="stack"><button type="submit" class="btn primary block" id="f-save">' + (p ? 'Guardar cambios' : k.save) + '</button>' +
-      (p ? '<button type="button" class="btn danger block" data-act="delete">Eliminar movimiento</button>' : '') +
+      (p ? '<button type="button" class="btn danger block" data-act="delete">' + (q ? 'Eliminar estas cuotas' : 'Eliminar movimiento') + '</button>' : '') +
       '<button type="button" class="btn ghost block" data-act="cancel">Cancelar</button></div></form>';
     return h;
   }
-  // Muestra el valor de cada cuota y los meses en que se pagan; el mes de la cuota 1 solo se pide si hay cuotas
+  // Valor de cada cuota y facturaciones en que se cobran; el mes solo se pide si hay cuotas
   function cuotaPreview() {
-    var out = document.getElementById('f-cuota'), wrap = document.getElementById('f-first-wrap'), lab = document.getElementById('f-first');
+    var out = document.getElementById('f-cuota'), wrap = document.getElementById('f-prox-wrap'), lab = document.getElementById('f-prox');
     if (!out || !wrap || !sheet) return;
-    var n = +val('f-n'), amount = +digits('f-amount'), ok = n >= 2 && n <= MAX_N;
+    var q = sheet.type === 'q', n = +val('f-n'), amount = +digits('f-amount'), ok = n >= (q ? 1 : 2) && n <= MAX_N;
     wrap.hidden = !ok;
-    if (lab) lab.textContent = monthName(sheet.first);
-    if (!ok) { out.textContent = 'Sin cuotas: se paga de una vez. Sube el número si fue en cuotas.'; return; }
-    var end = addMonths(sheet.first, n - 1);
-    out.textContent = (amount > 0 ? n + ' cuotas de ' + money(Math.floor(amount / n)) : n + ' cuotas') + ', ' +
-      (n === 2 ? 'en ' + monthName(sheet.first) + ' y ' + monthName(end) : 'de ' + monthName(sheet.first) + ' a ' + monthName(end)) +
-      '. El total ocupa el cupo desde la compra; al total a pagar entra la cuota de cada mes.';
+    if (lab) lab.textContent = monthName(sheet.prox);
+    if (!ok) { out.textContent = q ? 'Indica cuántas cuotas faltan por cobrar.' : 'Sin cuotas: se cobra de una vez. Sube el número si fue en cuotas.'; return; }
+    var end = addMonths(sheet.prox, n - 1), each = amount > 0 ? ' de ' + money(Math.floor(amount / n)) : '';
+    out.textContent = (n === 1 ? '1 cuota' + each + ', en la facturación de ' + monthName(sheet.prox)
+      : n + ' cuotas' + each + ', en las facturaciones de ' + monthName(sheet.prox) + (n === 2 ? ' y ' : ' a ') + monthName(end)) +
+      (q ? '. El monto ya ocupa cupo: suma al utilizado.' : '. El total ocupa el cupo desde la compra.');
   }
 
   function sheetSetup() {
-    var c = compute(), first = !cfg.at, today = todayKey();
+    var c = compute(), first = !cfg.desde, today = todayKey();
     return '<form class="panel" id="sheet-form" novalidate role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">' +
-      '<h2 id="sheet-title">' + (first ? 'Deuda pendiente' : 'Ajustar la deuda') + '</h2>' +
-      '<p class="sub">Mira en la app del banco el cupo utilizado de la tarjeta y escríbelo aquí. Desde esa fecha, cada compra o cargo resta del disponible y cada abono suma.</p>' +
-      moneyField('f-debt', 'Deuda pendiente (cupo utilizado)', '', 'Ej. 850.000') +
+      '<h2 id="sheet-title">' + (first ? 'Cupo y utilizado' : 'Ajustar al banco') + '</h2>' +
+      '<p class="sub">' + (first
+        ? 'Mira en la app del banco el cupo utilizado de la tarjeta y escríbelo aquí. Desde el día que indiques, cada compra o cargo resta del disponible y cada abono suma.'
+        : 'Si el disponible no coincide con el del banco, escribe el utilizado que muestra hoy la app del banco. La app corrige el saldo anterior para que coincidan; los movimientos no cambian.') + '</p>' +
+      moneyField('f-used', 'Utilizado según el banco', '', first ? 'Ej. 850.000' : dots(Math.max(0, c.used))) +
       moneyField('f-limit', 'Cupo de la tarjeta', dots(cfg.limit), 'Ej. 5.000.000') +
-      '<div class="pair"><label class="field"><span>Fecha de esa deuda</span><input type="date" id="f-date" value="' + today + '" max="' + today + '" required></label>' +
-      '<label class="field"><span>Hora</span><input type="time" id="f-time" value="' + nowTime() + '" required></label></div>' +
-      '<p class="note" id="f-avail">Disponible: <strong>' + money(cfg.limit) + '</strong> si no hay deuda.</p>' +
-      (first ? '' : '<p class="note">Deuda calculada por la app: <strong>' + money(c.used) + '</strong>. Último ajuste: ' + fmtAt(cfg.at) + '. Los movimientos anteriores a la nueva fecha quedan como historial.</p>') +
+      (first ? '<label class="field"><span>Registrar movimientos desde</span><input type="date" id="f-desde" value="' + today + '" max="' + today + '" required>' +
+        '<span class="hint">Lo anterior a ese día queda dentro del utilizado que escribiste.</span></label>' : '') +
+      '<p class="note" id="f-avail"></p>' +
       '<p class="err" id="f-err" role="alert" hidden></p>' +
       '<div class="stack"><button type="submit" class="btn primary block">Guardar</button>' +
       '<button type="button" class="btn ghost block" data-act="cancel">Cancelar</button></div></form>';
   }
+  // Lo que suman los movimientos desde un día (sin el saldo anterior)
+  function sumFrom(day) { var s = 0; items.forEach(function (m) { if (m.date >= day) s += uses(m); }); return s; }
   function setupPreview() {
     var out = document.getElementById('f-avail');
     if (!out) return;
-    var d = digits('f-debt'), l = digits('f-limit');
+    var u = digits('f-used'), l = digits('f-limit'), first = !cfg.desde;
     if (!/^\d+$/.test(l) || +l <= 0) { out.textContent = 'Escribe el cupo de la tarjeta para calcular el disponible.'; return; }
-    out.innerHTML = 'Disponible: <strong>' + money(+l - (/^\d+$/.test(d) ? +d : 0)) + '</strong>' + (/^\d+$/.test(d) ? '.' : ' si no hay deuda.');
+    if (!/^\d+$/.test(u)) {
+      out.innerHTML = first ? 'Disponible: <strong>' + money(+l) + '</strong> si no hay nada utilizado.'
+        : 'Utilizado según la app: <strong>' + money(compute().used) + '</strong> · saldo anterior al ' + fmt(cfg.desde) + ': ' + money(cfg.saldo) + '.';
+      return;
+    }
+    var h = 'Disponible: <strong>' + money(+l - +u) + '</strong>.';
+    if (first) {
+      var d = val('f-desde');
+      if (validDate(d) && d <= todayKey()) {
+        var plan = purgePlan(d, { limit: +l, desde: d, saldo: +u - sumFrom(d), ignored: cfg.ignored });
+        h += ' Saldo anterior al ' + fmt(d) + ': ' + money(plan.cfg.saldo) + '.';
+        if (plan.n) h += ' ' + plan.n + ' ' + plural(plan.n, 'movimiento anterior a ese día se borra', 'movimientos anteriores a ese día se borran') + ': ya ' + plural(plan.n, 'está', 'están') + ' dentro del utilizado.';
+      }
+    } else {
+      h += ' Saldo anterior al ' + fmt(cfg.desde) + ': ' + money(+u - (compute().used - cfg.saldo)) + ' (antes ' + money(cfg.saldo) + ').';
+    }
+    out.innerHTML = h;
+  }
+
+  function sheetPurge() {
+    return '<form class="panel" id="sheet-form" novalidate role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">' +
+      '<h2 id="sheet-title">Borrar registros anteriores</h2>' +
+      '<p class="sub">Borra los movimientos anteriores a la fecha que elijas, por ejemplo, los de un extracto ya pagado. Su monto pasa al saldo anterior: el utilizado y el disponible no cambian.</p>' +
+      '<label class="field"><span>Borrar los anteriores al</span><input type="date" id="f-purge" max="' + todayKey() + '" required></label>' +
+      '<p class="note" id="f-purge-note">Elige la fecha: se borran los registros de los días anteriores a ella.</p>' +
+      '<p class="err" id="f-err" role="alert" hidden></p>' +
+      '<div class="stack"><button type="submit" class="btn danger block" id="f-purge-go" disabled>Borrar</button>' +
+      '<button type="button" class="btn ghost block" data-act="cancel">Cancelar</button></div></form>';
+  }
+  function purgeCheck(k) {
+    if (!validDate(k)) return { err: 'Elige la fecha: se borran los registros de los días anteriores a ella.' };
+    if (k > todayKey()) return { err: 'La fecha no puede ser futura.' };
+    var p = purgePlan(k);
+    if (!p.n) return { err: 'No hay registros anteriores al ' + fmt(k) + '.' };
+    return { plan: p };
+  }
+  function purgePreview() {
+    var out = document.getElementById('f-purge-note'), btn = document.getElementById('f-purge-go');
+    if (!out || !btn || !sheet) return;
+    var r = purgeCheck(val('f-purge')), p = r.plan;
+    sheet.del = false; btn.classList.remove('armed');
+    btn.disabled = !p;
+    if (!p) { out.textContent = r.err; btn.textContent = 'Borrar'; return; }
+    out.innerHTML = 'Se ' + plural(p.n, 'borra 1 registro', 'borran ' + p.n + ' registros') + (p.from === p.to ? ', del ' + fmt(p.from) : ', del ' + fmt(p.from) + ' al ' + fmt(p.to)) + '. ' +
+      'Saldo anterior al ' + fmt(p.cfg.desde) + ': <strong>' + money(p.cfg.saldo) + '</strong>. El utilizado sigue en ' + money(compute().used) + '.' +
+      (p.moved ? ' ' + plural(p.moved, 'Uno tiene', p.moved + ' tienen') + ' cuotas por cobrar (' + money(p.movedAmt) + '): esas cuotas quedan en «Cuotas pendientes».' : '');
+    btn.textContent = 'Borrar ' + p.n + ' ' + plural(p.n, 'registro', 'registros');
+  }
+  async function doPurge(btn) {
+    var r = purgeCheck(val('f-purge')), p = r.plan;
+    if (!p) { setErr(r.err); return; }
+    if (!sheet.del) { sheet.del = true; btn.textContent = 'Toca de nuevo para borrar'; btn.classList.add('armed'); return; }
+    var ok = await applyUndoable(p.ups, p.rems, p.cfg, p.n + ' ' + plural(p.n, 'registro borrado', 'registros borrados') + '. Saldo anterior al ' + fmt(p.cfg.desde) + ': ' + money(p.cfg.saldo) + '.');
+    if (ok) closeSheet();
   }
 
   function sheetPaste() {
@@ -1735,7 +1782,6 @@ body { font-size: 17px; line-height: 1.38; }
       '<div class="stack"><button type="button" class="btn primary block" id="f-paste-add" data-act="paste-add" disabled>Agregar compra</button>' +
       '<button type="button" class="btn ghost block" data-act="cancel">Cerrar</button></div></div>';
   }
-
   function atajoGuide() {
     return '<ol class="guide">' +
       '<li><div>Abre <strong>Atajos</strong>, entra a <strong>Automatización</strong> y toca <strong>+</strong>. Elige <strong>Correo electrónico</strong> y en <strong>Remitente</strong> escribe el del banco. Deja vacíos <strong>Asunto</strong> y los demás campos: los avisos de la tarjeta y los de la cuenta llegan con asuntos distintos.<br><button type="button" class="btn tonal small" data-act="copy-sender">Copiar remitente</button></div></li>' +
@@ -1753,24 +1799,25 @@ body { font-size: 17px; line-height: 1.38; }
         Object.keys(CARDS).map(function (d) { return '··' + d; }).join(' ni ') + '. No se registran aquí.</p>' : '';
       return '<div class="panel" id="sheet-form" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">' +
         '<h2 id="sheet-title">Buzón y atajo</h2>' +
-        '<p class="sub">La app lee <strong>' + esc(prefs.repo) + '</strong> al abrirse y agrega las compras con tarjeta de crédito que falten.' + (prefs.last ? ' Última lectura: ' + ago(prefs.last) + '.' : '') + '</p>' +
+        '<p class="sub">La app lee <strong>' + esc(prefs.repo) + '</strong> al abrirse y agrega las compras con tarjeta de crédito que falten' +
+        (cfg.desde ? ', desde el ' + fmt(cfg.desde) : '') + '. Si una compra ya está anotada a mano con la misma fecha y monto, el aviso se une a ella.' + (prefs.last ? ' Última lectura: ' + ago(prefs.last) + '.' : '') + '</p>' +
         '<h3>Últimos correos del buzón</h3><div class="stack" id="f-mails"><p class="muted fine">Revisando el buzón…</p></div>' + other +
         '<p class="note"><strong>La automatización de Atajos es la misma de FAN.</strong> Debe filtrar solo por el remitente del banco, sin condición de asunto: así envía al buzón todos los correos, y FAN toma las compras de la cuenta y esta app, las de la tarjeta.</p>' +
         '<details class="fold"><summary>Crear la automatización desde cero</summary>' +
         '<p class="muted fine">Se crea una sola vez. Envía al buzón cada correo del banco apenas llega a Mail.</p>' + atajoGuide() + '</details>' +
         '<details class="fold" id="f-widget"' + (prefs.widget ? ' open' : '') + '><summary>Widget en la pantalla de inicio</summary>' +
-        '<p class="muted fine">Muestra el total a pagar de este mes y las tres últimas compras. Se hace con la app gratuita Scriptable, porque una app web no puede crear widgets por sí sola.</p>' +
+        '<p class="muted fine">Muestra el disponible, el utilizado y las tres últimas compras. Se hace con la app gratuita Scriptable, porque una app web no puede crear widgets por sí sola.</p>' +
         '<ol class="guide">' +
         '<li><div>Instala <strong>Scriptable</strong> desde el App Store.</div></li>' +
         '<li><div>Copia el script. Ya va completo, con tu buzón y tu token.<br><button type="button" class="btn tonal small" data-act="copy-widget">Copiar el script del widget</button></div></li>' +
-        '<li><div>Abre Scriptable, toca <strong>+</strong> y pega el script. Toca el título de arriba y nómbralo <strong>Master</strong>. Ejecútalo con <strong>▶</strong>: debe mostrar el total a pagar.</div></li>' +
+        '<li><div>Abre Scriptable, toca <strong>+</strong> y pega el script. Toca el título de arriba y nómbralo <strong>Master</strong>. Ejecútalo con <strong>▶</strong>: debe mostrar el disponible.</div></li>' +
         '<li><div>En la pantalla de inicio, mantén presionado un espacio vacío, toca <strong>Editar</strong> y <strong>Agregar widget</strong>. Busca <strong>Scriptable</strong> y elige el tamaño mediano.</div></li>' +
         '<li><div>Mantén presionado el widget nuevo, toca <strong>Editar widget</strong> y en <strong>Script</strong> elige <strong>Master</strong>.</div></li>' +
         '</ol>' +
         '<p class="note">' + (prefs.widget
           ? '<strong>Widget activado.</strong> ' + (widgetErr ? 'No se pudieron enviar los datos: ' + esc(errMsg(widgetErr)) : prefs.wAt ? 'Datos enviados ' + ago(prefs.wAt) + '.' : 'Enviando los datos…') + ' '
           : '') +
-        'Para el widget, Master guarda el utilizado, las cuotas y las últimas compras en tu repositorio privado, y el script lleva tu token. iOS decide cada cuánto lo actualiza, normalmente cada varios minutos.' +
+        'Para el widget, Master guarda el utilizado, el cupo y las últimas compras en tu repositorio privado, y el script lleva tu token. iOS decide cada cuánto lo actualiza, normalmente cada varios minutos.' +
         (prefs.widget ? '<br><button type="button" class="btn ghost small" data-act="widget-off">Desactivar el widget</button>' : '') + '</p>' +
         '</details>' +
         '<div class="stack"><button type="button" class="btn primary block" data-act="sync-now">Leer el buzón ahora</button>' +
@@ -1798,160 +1845,79 @@ body { font-size: 17px; line-height: 1.38; }
   }
 
   /* ---------- Extracto ---------- */
-  // Primero se pide la fecha de corte y el mes de pago; luego se muestra el extracto de ese periodo, que se puede copiar,
-  // exportar a Excel y, si coincide con el del banco, cerrar para iniciar el periodo siguiente.
-  // Los montos van como deuda: compras y cargos en positivo, abonos en negativo.
-  function startLabel(d) { return d.prev ? 'Deuda al corte anterior (' + fmt(d.prev) + ')' : 'Deuda inicial'; }
-  function buildExtract(corte, pay) {
-    var d = extractData(corte, pay), t = d.t, mes = monthName(pay), sd = d.start.slice(0, 10);
-    function kind(m) { return m.type === 'c' ? WHO[m.who] + (m.n > 1 ? ' · ' + m.n + ' cuotas' : '') : m.type === 'g' ? 'Cargo' : 'Abono'; }
-    function owed(m) { return money(uses(m)); }
-    function startWhen() { return d.prev ? fmtFull(d.prev) : fmtFull(sd) + ', ' + d.start.slice(11); }
-    function cuotaLine(m, st) {
-      return m.n + ' cuotas de ' + money(cuotaVal(m)) + ' · en ' + mes + ': ' + (st.now ? 'cuota ' + st.now + ', ' + money(st.nowAmt) : 'ninguna') +
-        ' · después: ' + (st.later ? st.later + ' ' + plural(st.later, 'cuota', 'cuotas') + ', ' + money(st.laterAmt) + ', hasta ' + monthName(st.end) : 'ninguna');
-    }
+  // Todo lo registrado desde el día «desde»: el saldo anterior, cada movimiento y el utilizado que resulta, más las
+  // cuotas que faltan por cobrar. Los montos van como deuda: compras, cargos y cuotas en positivo, abonos en negativo.
+  function extractData() {
+    var c = compute(), d = { desde: cfg.desde, saldo: cfg.saldo, rows: c.rows, t: c.t, used: c.used, avail: c.avail, cuotas: [], pendAmt: 0, pendN: 0 };
+    c.rows.forEach(function (m) {
+      if (!isCuota(m)) return;
+      var st = cuotaState(m);
+      d.cuotas.push({ m: m, st: st });
+      if (st.pend) { d.pendAmt += st.pendAmt; d.pendN += st.pend; }
+    });
+    return d;
+  }
+  function kindOf(m) {
+    return m.type === 'c' ? WHO[m.who] + (m.n > 1 ? ' · ' + m.n + ' cuotas' : '') : m.type === 'q' ? 'Cuotas anteriores · ' + WHO[m.who] : m.type === 'g' ? 'Cargo' : 'Abono';
+  }
+  function buildExtract() {
+    var d = extractData(), t = d.t, pend = d.cuotas.filter(function (x) { return x.st.pend; });
+    function when(m) { return fmtNum(m.date) + (m.time ? ' ' + m.time : ''); }
+    function cuotaLine(x) { return x.st.pend + ' de ' + x.m.n + ' ' + plural(x.m.n, 'cuota', 'cuotas') + ' por cobrar, ' + money(x.st.pendAmt) + ' · ' + cuotaWhen(x.st).toLowerCase(); }
+    var saldoLbl = 'Saldo anterior al ' + fmtNum(d.desde);
 
-    var L = ['MASTER · Extracto de la tarjeta', 'Fecha de corte: ' + fmtNum(corte) + ' · periodo del ' + fmtNum(sd) + ' al ' + fmtNum(corte),
-      'Se paga en ' + mes, 'Generado el ' + fmtFull(todayKey()) + ', ' + nowTime(), '',
-      'Cupo: ' + money(cfg.limit), 'Utilizado al corte: ' + money(d.used), 'Disponible al corte: ' + money(d.avail), '',
-      startLabel(d).toUpperCase() + ': ' + money(d.usedStart), '',
-      'MOVIMIENTOS DEL PERIODO (' + d.rows.length + ')'];
-    if (!d.rows.length) L.push('Sin movimientos en el periodo.');
-    d.rows.forEach(function (m, i) { L.push((i + 1) + '. ' + fmtNum(m.date) + ' ' + m.time + ' · ' + m.desc + ' · ' + kind(m) + ' · ' + owed(m)); });
+    var L = ['MASTER · Extracto de la tarjeta', 'Movimientos desde el ' + fmtNum(d.desde), 'Generado el ' + fmtFull(todayKey()) + ', ' + nowTime(), '',
+      'Cupo: ' + money(cfg.limit), 'Utilizado: ' + money(d.used), 'Disponible: ' + money(d.avail), '',
+      saldoLbl.toUpperCase() + ': ' + money(d.saldo), '',
+      'MOVIMIENTOS (' + d.rows.length + ')'];
+    if (!d.rows.length) L.push('Sin movimientos.');
+    d.rows.forEach(function (m, i) { L.push((i + 1) + '. ' + when(m) + ' · ' + m.desc + ' · ' + kindOf(m) + ' · ' + money(uses(m))); });
     L.push('', 'TOTALES',
-      startLabel(d) + ': ' + money(d.usedStart),
+      saldoLbl + ': ' + money(d.saldo),
       'Titular (' + t.nT + ' ' + plural(t.nT, 'compra', 'compras') + '): ' + money(t.T),
       'Adicional (' + t.nA + ' ' + plural(t.nA, 'compra', 'compras') + '): ' + money(t.A),
       'Cargos (' + t.ng + '): ' + money(t.g),
-      'Abonos (' + t.na + '): ' + money(-t.a),
-      'Utilizado al corte: ' + money(d.used));
-    if (d.laterAmt > 0) L.push('Cuotas que vencen después de ' + mes + ' (' + d.laterN + '): ' + money(-d.laterAmt));
-    L.push('', 'TOTAL A PAGAR: ' + money(d.due));
-    if (d.cuotas.length) {
-      L.push('', 'COMPRAS EN CUOTAS');
-      d.cuotas.forEach(function (x) { L.push(x.m.desc + ' · ' + WHO[x.m.who] + ' · ' + cuotaLine(x.m, x.st)); });
-      L.push('Cuotas de ' + mes + ', dentro del total a pagar: ' + money(d.nowAmt));
-    }
-    if (d.after.length) {
-      L.push('', 'DESPUÉS DEL CORTE (' + d.after.length + '): quedan para el periodo siguiente · ' + money(d.afterSum));
-      d.after.forEach(function (m, i) { L.push((i + 1) + '. ' + fmtNum(m.date) + ' ' + m.time + ' · ' + m.desc + ' · ' + kind(m) + ' · ' + owed(m)); });
+      'Abonos (' + t.na + '): ' + money(-t.a));
+    if (t.nq) L.push('Cuotas de compras anteriores (' + t.nq + '): ' + money(t.q));
+    L.push('UTILIZADO: ' + money(d.used));
+    if (pend.length) {
+      L.push('', 'CUOTAS PENDIENTES');
+      pend.forEach(function (x) { L.push(x.m.desc + ' · ' + WHO[x.m.who] + ' · ' + cuotaLine(x)); });
+      L.push('Por cobrar en cuotas: ' + money(d.pendAmt) + ' (ya incluido en el utilizado)');
     }
 
-    function li(m) { return '<li><b>' + esc(m.desc) + '</b><i' + (m.type === 'a' ? ' class="in"' : '') + '>' + owed(m) + '</i><span>' + fmtFull(m.date) + ', ' + m.time + ' · ' + kind(m) + '</span></li>'; }
-    var h = '<dl class="ext-kv"><div><dt>Cupo</dt><dd>' + money(cfg.limit) + '</dd></div><div><dt>Utilizado al corte</dt><dd>' + money(d.used) + '</dd></div><div><dt>Disponible al corte</dt><dd>' + money(d.avail) + '</dd></div></dl>' +
-      '<h3>Movimientos del periodo (' + d.rows.length + ')</h3><ul class="ext-list">' +
-      '<li><b>' + startLabel(d) + '</b><i>' + money(d.usedStart) + '</i><span>' + startWhen() + '</span></li>' +
+    function li(m) { return '<li><b>' + esc(m.desc) + '</b><i' + (m.type === 'a' ? ' class="in"' : '') + '>' + money(uses(m)) + '</i><span>' + fmtFull(m.date) + (m.time ? ', ' + m.time : '') + ' · ' + kindOf(m) + '</span></li>'; }
+    var h = '<dl class="ext-kv"><div><dt>Cupo</dt><dd>' + money(cfg.limit) + '</dd></div><div><dt>Utilizado</dt><dd>' + money(d.used) + '</dd></div><div><dt>Disponible</dt><dd>' + money(d.avail) + '</dd></div></dl>' +
+      '<h3>Movimientos (' + d.rows.length + ')</h3><ul class="ext-list">' +
+      '<li><b>Saldo anterior</b><i>' + money(d.saldo) + '</i><span>Lo utilizado antes del ' + fmtFull(d.desde) + '</span></li>' +
       d.rows.map(li).join('') + '</ul>' +
       '<h3>Totales</h3><dl class="ext-kv">' +
-      '<div><dt>' + startLabel(d) + '</dt><dd>' + money(d.usedStart) + '</dd></div>' +
+      '<div><dt>Saldo anterior</dt><dd>' + money(d.saldo) + '</dd></div>' +
       '<div><dt>Titular · ' + t.nT + ' ' + plural(t.nT, 'compra', 'compras') + '</dt><dd>' + money(t.T) + '</dd></div>' +
       '<div><dt>Adicional · ' + t.nA + ' ' + plural(t.nA, 'compra', 'compras') + '</dt><dd>' + money(t.A) + '</dd></div>' +
       '<div><dt>Cargos · ' + t.ng + '</dt><dd>' + money(t.g) + '</dd></div>' +
       '<div><dt>Abonos · ' + t.na + '</dt><dd class="in">' + money(-t.a) + '</dd></div>' +
-      '<div class="sum"><dt>Utilizado al corte</dt><dd>' + money(d.used) + '</dd></div>' +
-      (d.laterAmt > 0 ? '<div><dt>Cuotas que vencen después · ' + d.laterN + '</dt><dd>' + money(-d.laterAmt) + '</dd></div>' : '') + '</dl>' +
-      '<div class="ext-total"><span>Total a pagar</span><b>' + money(d.due) + '</b></div>';
-    if (d.cuotas.length) {
-      h += '<h3>Compras en cuotas</h3><ul class="ext-list">' +
-        d.cuotas.map(function (x) { return '<li><b>' + esc(x.m.desc) + '</b><i>' + money(x.m.amount) + '</i><span>' + WHO[x.m.who] + ' · ' + cuotaLine(x.m, x.st) + '</span></li>'; }).join('') + '</ul>' +
-        '<p class="note">El total a pagar incluye <strong>' + money(d.nowAmt) + '</strong> en cuotas de ' + mes + '.' +
-        (d.laterAmt > 0 ? ' Quedan fuera <strong>' + money(d.laterAmt) + '</strong> en cuotas que vencen después: ocupan cupo, pero se pagan en sus meses.' : '') + '</p>';
-    }
-    if (d.after.length) {
-      h += '<h3>Después del corte (' + d.after.length + ')</h3>' +
-        '<p class="muted fine">No entran en este extracto: quedan para el periodo siguiente. Suman ' + money(d.afterSum) + '.</p>' +
-        '<ul class="ext-list">' + d.after.map(li).join('') + '</ul>';
+      (t.nq ? '<div><dt>Cuotas de compras anteriores · ' + t.nq + '</dt><dd>' + money(t.q) + '</dd></div>' : '') + '</dl>' +
+      '<div class="ext-total"><span>Utilizado</span><b>' + money(d.used) + '</b></div>';
+    if (pend.length) {
+      h += '<h3>Cuotas pendientes</h3><ul class="ext-list">' +
+        pend.map(function (x) { return '<li><b>' + esc(x.m.desc) + '</b><i>' + money(x.st.pendAmt) + '</i><span>' + WHO[x.m.who] + ' · ' + cuotaLine(x) + '</span></li>'; }).join('') + '</ul>' +
+        '<p class="note">Quedan <strong>' + money(d.pendAmt) + '</strong> por cobrar en cuotas. Ya están dentro del utilizado.</p>';
     }
     return { data: d, html: h, text: L.join('\n') };
   }
-
-  // Paso 1: fecha de corte y mes de pago
-  function sheetPick(s) {
-    return '<form class="panel" id="sheet-form" novalidate role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">' +
-      '<h2 id="sheet-title">Extracto</h2>' +
-      '<p class="sub">Indica la fecha de corte del periodo. El banco cierra el periodo ese día y envía el extracto unos días después: las compras posteriores al corte no entran y quedan para el periodo siguiente.</p>' +
-      '<label class="field"><span>Fecha de corte</span><input type="date" id="f-corte" value="' + s.corte + '" min="' + cfg.at.slice(0, 10) + '" max="' + todayKey() + '" required></label>' +
-      '<div class="field"><span id="f-pay-label">El extracto se paga en</span><div class="stepper">' +
-      '<button type="button" data-act="pay-month" data-d="-1" aria-label="Mes anterior">' + I_MINUS + '</button>' +
-      '<output class="step-val" id="f-pay" aria-labelledby="f-pay-label">' + monthName(s.pay) + '</output>' +
-      '<button type="button" data-act="pay-month" data-d="1" aria-label="Mes siguiente">' + I_PLUS + '</button></div>' +
-      '<span class="hint">De las compras en cuotas, entran en el total las cuotas que se pagan hasta ese mes.</span></div>' +
-      '<p class="note" id="f-period"></p>' +
-      '<p class="err" id="f-err" role="alert" hidden></p>' +
-      '<div class="stack"><button type="submit" class="btn primary block">Generar extracto</button>' +
-      '<button type="button" class="btn ghost block" data-act="cancel">Cancelar</button></div></form>';
-  }
-  // Resumen del periodo elegido, mientras se cambia la fecha o el mes de pago
-  function periodPreview() {
-    var out = document.getElementById('f-period'), pv = document.getElementById('f-pay');
-    if (!out || !sheet || sheet.mode !== 'extract') return;
-    if (pv) pv.textContent = monthName(sheet.pay);
-    var k = val('f-corte'), err = corteError(k);
-    if (err) { out.textContent = err; return; }
-    var d = extractData(k, sheet.pay), n = d.rows.length, a = d.after.length;
-    out.innerHTML = 'Periodo del ' + fmt(d.start.slice(0, 10)) + ' al ' + fmt(k) + ': ' + n + ' ' + plural(n, 'movimiento', 'movimientos') +
-      ' · total a pagar <strong>' + money(d.due) + '</strong>.' +
-      (a ? ' Quedan fuera ' + a + ' ' + plural(a, 'movimiento posterior', 'movimientos posteriores') + ' al corte, por ' + money(d.afterSum) + ', que pasan al periodo siguiente.' : '') +
-      (d.closed ? ' Este periodo ya está cerrado.' : '');
-  }
-  function payBounds() { var m = sheet.corte.slice(0, 7); return [m, addMonths(m, 2)]; }
-  function corteInput() {
-    var k = val('f-corte');
-    if (!corteError(k)) {
-      sheet.corte = k;
-      var b = payBounds();
-      if (sheet.payAuto) sheet.pay = addMonths(k.slice(0, 7), payOffset());
-      sheet.pay = sheet.pay < b[0] ? b[0] : sheet.pay > b[1] ? b[1] : sheet.pay;
-    }
-    periodPreview();
-  }
-  function genExtract() {
-    var k = val('f-corte'), err = corteError(k);
-    if (err) { setErr(err); return; }
-    sheet.corte = k; sheet.step = 'view';
-    prefs.payOff = monthsFrom(k.slice(0, 7), sheet.pay); savePrefs();
-    renderSheet();
-    var f = document.getElementById('sheet-form');
-    if (f) { f.scrollTop = 0; f.focus(); }
-  }
-  // Paso 2: el extracto del periodo
   function sheetExtract(s) {
-    if (s.step !== 'view') return sheetPick(s);
-    var ex = buildExtract(s.corte, s.pay), d = ex.data;
-    s.text = ex.text; s.ex = d;
-    var canShare = !hasHost && typeof navigator.share === 'function', nd = fmt(nextDay(s.corte));
-    var close = d.closed
-      ? '<p class="note"><strong>Periodo cerrado.</strong> El periodo siguiente parte el ' + nd + ' y lleva los movimientos posteriores al corte.</p>' +
-        '<button type="button" class="btn ghost block" data-act="ext-reopen">Reabrir este periodo</button>'
-      : '<p class="note">Si coincide con el extracto del banco, inicia el periodo siguiente: partirá el ' + nd +
-        (d.after.length ? ' con los ' + d.after.length + ' ' + plural(d.after.length, 'movimiento posterior', 'movimientos posteriores') + ' al corte' : '') +
-        ', y «Por tarjeta» mostrará solo ese periodo.</p>' +
-        '<button type="button" class="btn tonal block" data-act="ext-close">Iniciar el periodo siguiente</button>';
+    var ex = buildExtract();
+    s.text = ex.text; s.ex = ex.data;
+    var canShare = !hasHost && typeof navigator.share === 'function';
     return '<div class="panel" id="sheet-form" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">' +
-      '<h2 id="sheet-title">Extracto al ' + fmt(s.corte) + '</h2>' +
-      '<p class="sub">Periodo del ' + fmtFull(d.start.slice(0, 10)) + ' al ' + fmtFull(s.corte) + ', fecha de corte. Se paga en ' + monthName(s.pay) + '. Generado el ' + fmtFull(todayKey()) + ', ' + nowTime() + '.</p>' +
+      '<h2 id="sheet-title">Extracto</h2>' +
+      '<p class="sub">Movimientos desde el ' + fmtFull(cfg.desde) + '. Generado el ' + fmtFull(todayKey()) + ', ' + nowTime() + '.</p>' +
       ex.html +
       '<div class="stack"><button type="button" class="btn primary block" data-act="ext-copy">Copiar extracto</button>' +
       (!hasHost || saver ? '<button type="button" class="btn tonal block" data-act="ext-xlsx">Exportar a Excel</button>' : '') +
-      (canShare ? '<button type="button" class="btn tonal block" data-act="ext-share">Compartir</button>' : '') + '</div>' +
-      close +
-      '<div class="stack"><button type="button" class="btn ghost block" data-act="ext-pick">Cambiar la fecha de corte</button>' +
+      (canShare ? '<button type="button" class="btn tonal block" data-act="ext-share">Compartir</button>' : '') +
       '<button type="button" class="btn ghost block" data-act="cancel">Cerrar</button></div></div>';
-  }
-  async function setCortes(list, msg, undoMsg) {
-    if (busy) return;
-    var prev = cfg, corte = sheet.corte, pay = sheet.pay;
-    var next = withCfg({ cortes: list.filter(function (k, i) { return list.indexOf(k) === i; }).sort().slice(-MAX_CORTES),
-      payOff: list.indexOf(corte) >= 0 ? monthsFrom(corte.slice(0, 7), pay) : cfg.payOff });
-    busy = true;
-    var ok = await commit([], [], next);
-    busy = false;
-    if (!ok) return;
-    if (sheet && sheet.mode === 'extract') renderSheet();
-    toast(msg, 'Deshacer', function () {
-      commit([], [], prev).then(function () { if (sheet && sheet.mode === 'extract') renderSheet(); toast(undoMsg); });
-    }, 7000);
   }
 
   /* ---------- Exportar el extracto a Excel ---------- */
@@ -2003,7 +1969,7 @@ body { font-size: 17px; line-height: 1.38; }
   function excelTime(t) { return (+t.slice(0, 2) * 60 + +t.slice(3, 5)) / 1440; }
 
   function buildXlsx(d) {
-    var t = d.t, mes = monthName(d.pay), sd = d.start.slice(0, 10);
+    var t = d.t, saldoLbl = 'Saldo anterior al ' + fmtFull(d.desde);
     var H = 1, M = 2, MB = 3, D = 4, T = 5, TT = 6, B = 7;        // estilos: encabezado, monto, monto en negrita, fecha, hora, título, negrita
     var strings = [], index = {}, refs = 0;
     function sst(v) { refs++; if (!(('k' + v) in index)) { index['k' + v] = strings.length; strings.push(v); } return index['k' + v]; }
@@ -2032,61 +1998,49 @@ body { font-size: 17px; line-height: 1.38; }
 
     var resumen = [
       [{ v: 'Master · Extracto de la tarjeta de crédito', s: TT }],
-      ['Fecha de corte: ' + fmtFull(d.corte) + ' · periodo del ' + fmtFull(sd) + ' al ' + fmtFull(d.corte)],
-      ['Se paga en ' + mes + ' · generado el ' + fmtFull(todayKey()) + ', ' + nowTime()],
+      ['Movimientos desde el ' + fmtFull(d.desde) + ' · generado el ' + fmtFull(todayKey()) + ', ' + nowTime()],
       [],
       [h('Resumen'), h('Monto')],
       ['Cupo', money$(cfg.limit)],
-      ['Utilizado al corte', money$(d.used)],
-      ['Disponible al corte', money$(d.avail)],
-      [{ v: 'Total a pagar', s: B }, money$(d.due, true)],
+      [{ v: 'Utilizado', s: B }, money$(d.used, true)],
+      ['Disponible', money$(d.avail)],
       [],
-      [h('Detalle'), h('Monto'), h('Cantidad')],
-      [startLabel(d), money$(d.usedStart)],
+      [h('Detalle del utilizado'), h('Monto'), h('Cantidad')],
+      [saldoLbl, money$(d.saldo)],
       ['Compras Titular', money$(t.T), t.nT],
       ['Compras Adicional', money$(t.A), t.nA],
       ['Cargos', money$(t.g), t.ng],
       ['Abonos', money$(0 - t.a), t.na],
-      [{ v: 'Utilizado al corte', s: B }, money$(d.used, true)],
-      ['Cuotas que vencen después de ' + mes, money$(0 - d.laterAmt), d.laterN],
-      [{ v: 'Total a pagar', s: B }, money$(d.due, true)],
-      [],
-      ['Cuotas de ' + mes + ', incluidas en el total a pagar', money$(d.nowAmt), d.nowN]
+      ['Cuotas de compras anteriores', money$(t.q), t.nq],
+      [{ v: 'Utilizado', s: B }, money$(d.used, true)]
     ];
-    if (d.after.length) resumen.push(['Después del corte: quedan para el periodo siguiente', money$(d.afterSum), d.after.length]);
-    // Movimientos: la deuda al inicio del periodo y los movimientos hasta el corte, con los montos como deuda.
-    // La suma de «Monto» es el utilizado al corte.
-    function movRow(m, i) {
-      var buy = m.type === 'c';
-      return [i, { v: excelDate(m.date), s: D }, { v: excelTime(m.time), s: T }, m.desc,
-        buy ? 'Compra' : m.type === 'g' ? 'Cargo' : 'Abono', buy ? WHO[m.who] : '', buy ? m.n : '', money$(uses(m))];
-    }
+    if (d.pendN) resumen.push([], ['Cuotas por cobrar, ya incluidas en el utilizado', money$(d.pendAmt), d.pendN]);
+    // Movimientos: el saldo anterior y cada movimiento, con los montos como deuda. La suma de «Monto» es el utilizado.
     var head = [h('N°'), h('Fecha'), h('Hora'), h('Descripción'), h('Tipo'), h('Tarjeta'), h('Cuotas'), h('Monto')];
-    var mov = [head, ['', { v: excelDate(d.prev || sd), s: D }, d.prev ? '' : { v: excelTime(d.start.slice(11)), s: T }, startLabel(d), startLabel(d), '', '', money$(d.usedStart)]];
-    d.rows.forEach(function (m, i) { mov.push(movRow(m, i + 1)); });
-    var after = [head];
-    d.after.forEach(function (m, i) { after.push(movRow(m, i + 1)); });
-    var cuo = [[h('Comercio'), h('Tarjeta'), h('Fecha de compra'), h('Monto total'), h('Cuotas'), h('Valor cuota'), h('Cuota 1 se paga en'), h('Última cuota'),
-      h('Pagadas'), h('Cuota de ' + mes), h('Monto de ' + mes), h('Cuotas después'), h('Monto después'), h('Estado')]];
-    items.forEach(function (m) {
-      if (m.type !== 'c' || m.n < 2 || m.date > d.corte) return;
-      var st = cuotaState(m, d.pay);
-      cuo.push([m.desc, WHO[m.who], { v: excelDate(m.date), s: D }, money$(m.amount), m.n, money$(cuotaVal(m)), monthName(m.first), monthName(st.end),
-        st.paid, st.now || '', money$(st.nowAmt), st.later, money$(st.laterAmt), st.paid >= m.n ? 'Terminada' : 'En curso']);
+    var mov = [head, ['', { v: excelDate(d.desde), s: D }, '', saldoLbl, 'Saldo anterior', '', '', money$(d.saldo)]];
+    d.rows.forEach(function (m, i) {
+      var buy = m.type === 'c' || m.type === 'q';
+      mov.push([i + 1, { v: excelDate(m.date), s: D }, m.time ? { v: excelTime(m.time), s: T } : '', m.desc,
+        m.type === 'c' ? 'Compra' : m.type === 'q' ? 'Cuotas anteriores' : m.type === 'g' ? 'Cargo' : 'Abono', buy ? WHO[m.who] : '', buy ? m.n : '', money$(uses(m))]);
+    });
+    var cuo = [[h('Comercio'), h('Tarjeta'), h('Tipo'), h('Monto'), h('Cuotas'), h('Valor cuota'), h('Primera facturación'), h('Última facturación'),
+      h('Cobradas'), h('Por cobrar'), h('Monto por cobrar'), h('Próxima facturación'), h('Estado')]];
+    d.cuotas.forEach(function (x) {
+      var m = x.m, st = x.st;
+      cuo.push([m.desc, WHO[m.who], m.type === 'q' ? 'Cuotas anteriores' : 'Compra en cuotas', money$(m.amount), m.n, money$(cuotaVal(m)), monthName(m.prox), monthName(st.end),
+        st.done, st.pend, money$(st.pendAmt), st.next ? monthName(st.next) : '', st.pend ? 'Por cobrar' : 'Terminada']);
     });
 
-    var movRef = 'A1:H' + mov.length;
     var sheets = [
-      { name: 'Resumen', xml: sheetXml(resumen, [52, 16, 11]) },
-      { name: 'Movimientos', xml: sheetXml(mov, [6, 12, 8, 38, 14, 12, 8, 14], { freeze: true, filter: movRef }) }
+      { name: 'Resumen', xml: sheetXml(resumen, [46, 16, 11]) },
+      { name: 'Movimientos', xml: sheetXml(mov, [6, 12, 8, 38, 18, 12, 8, 14], { freeze: true, filter: 'A1:H' + mov.length }) }
     ];
-    if (cuo.length > 1) sheets.push({ name: 'Cuotas', xml: sheetXml(cuo, [34, 11, 15, 14, 8, 13, 19, 16, 9, 20, 21, 15, 15, 11], { freeze: true }) });
-    if (after.length > 1) sheets.push({ name: 'Después del corte', xml: sheetXml(after, [6, 12, 8, 38, 14, 12, 8, 14], { freeze: true }) });
+    if (cuo.length > 1) sheets.push({ name: 'Cuotas', xml: sheetXml(cuo, [34, 11, 18, 14, 8, 13, 20, 20, 10, 10, 16, 20, 11], { freeze: true }) });
 
     var fmt$ = '&quot;$&quot;#,##0;\\-&quot;$&quot;#,##0';
     var styles = XML_HEAD + '<styleSheet xmlns="' + NS_MAIN + '"><numFmts count="2"><numFmt numFmtId="164" formatCode="' + fmt$ + '"/><numFmt numFmtId="165" formatCode="hh:mm"/></numFmts>' +
       '<fonts count="3"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="14"/><name val="Calibri"/><family val="2"/></font></fonts>' +
-      '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFECE6E1"/><bgColor indexed="64"/></patternFill></fill></fills>' +
+      '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDFE9FD"/><bgColor indexed="64"/></patternFill></fill></fills>' +
       '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
       '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
       '<cellXfs count="8"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
@@ -2123,7 +2077,7 @@ body { font-size: 17px; line-height: 1.38; }
   // Entrega el archivo: en el teléfono, por la hoja de compartir (guardar en Archivos, abrir en Excel, enviar);
   // en un computador, como descarga; dentro de Claude, a través de la app, que pide confirmación.
   async function exportExcel() {
-    var d = sheet && sheet.ex, blob, name = 'Extracto Master corte ' + (d ? d.corte : todayKey()) + '.xlsx';
+    var d = sheet && sheet.ex, blob, name = 'Extracto Master ' + todayKey() + '.xlsx';
     if (!d) return;
     try { blob = buildXlsx(d); } catch (e) { toast('No se pudo generar el archivo de Excel.'); return; }
     if (hasHost) {
@@ -2151,10 +2105,11 @@ body { font-size: 17px; line-height: 1.38; }
     else if (s.mode === 'paste') h += sheetPaste();
     else if (s.mode === 'box') h += sheetBox();
     else if (s.mode === 'extract') h += sheetExtract(s);
+    else if (s.mode === 'purge') h += sheetPurge();
     else h += sheetMove(s);
     sheetEl.innerHTML = h;
     cuotaPreview();
-    if (s.mode === 'extract' && s.step !== 'view') periodPreview();
+    if (s.mode === 'setup') setupPreview();
   }
 
   // Mantiene la hoja dentro del área visible cuando aparece el teclado del teléfono
@@ -2168,19 +2123,18 @@ body { font-size: 17px; line-height: 1.38; }
   function openSheet(m, id, opts) {
     var p = m === 'edit' ? find(id) : null;
     if (m === 'edit' && !p) return;
-    if (m === 'extract' && !cfg.at) return;
+    if ((m === 'extract' || m === 'purge') && !cfg.desde) return;
     opts = opts || {};
     sheet = { mode: m, id: id || null, del: false, testing: false, text: '',
       type: p ? p.type : opts.type || 'c', who: p && p.who ? p.who : 'T', n: opts.n || 1,
-      // Mes de la cuota 1: el guardado o, mientras no se toque, el del extracto que incluye la compra
-      first: p && p.first ? p.first : firstFor(p ? p.date : todayKey()), firstAuto: !(p && p.first) };
-    if (m === 'extract') { sheet.step = 'pick'; sheet.corte = defaultCorte(); sheet.payAuto = true; sheet.pay = addMonths(sheet.corte.slice(0, 7), payOffset()); }
+      // Mes de la facturación que cobra la (próxima) cuota: el guardado o, mientras no se toque, el sugerido por la fecha
+      prox: p && p.prox ? p.prox : proxFor(p ? p.date : todayKey()), proxAuto: !(p && p.prox) };
     renderSheet();
     sheetEl.hidden = false;
     document.documentElement.classList.add('lock');
     toastEl.hidden = true;
     fitSheet();
-    var target = document.getElementById(m === 'add' ? 'f-amount' : m === 'setup' ? 'f-debt' : m === 'paste' ? 'f-paste' : 'sheet-form');
+    var target = document.getElementById(m === 'add' ? 'f-amount' : m === 'setup' ? 'f-used' : m === 'paste' ? 'f-paste' : 'sheet-form');
     if (target) target.focus();
     if (m === 'box' && prefs.repo && canSync) loadMails();
   }
@@ -2202,49 +2156,53 @@ body { font-size: 17px; line-height: 1.38; }
     var today = todayKey();
     var p = sheet.id ? find(sheet.id) : null;
     if (sheet.mode === 'edit' && !p) { closeSheet(); return; }
-    var type = sheet.type, k = KIND[type];
-    var raw = digits('f-amount'), desc = clean(val('f-desc')), date = val('f-date'), time = val('f-time');
+    var type = sheet.type, q = type === 'q';
+    var raw = digits('f-amount'), desc = clean(val('f-desc'));
+    var date = q ? (p ? p.date : (cfg.desde && cfg.desde > today ? cfg.desde : today)) : val('f-date'), time = q ? '' : val('f-time');
     if (!/^\d+$/.test(raw) || +raw <= 0) { setErr('Escribe el monto en pesos, por ejemplo 150000.'); return; }
     if (+raw > MAX_AMOUNT) { setErr('El monto es demasiado grande. Revisa los dígitos.'); return; }
     if (!validDate(date)) { setErr('Indica la fecha del movimiento.'); return; }
-    if (date > today) { setErr('La fecha no puede ser futura.'); return; }
-    if (!TIME_RE.test(time)) { setErr('Indica la hora, por ejemplo 13:04.'); return; }
-    if (!desc && p && p.src === 'mail') { setErr('Escribe el nombre del comercio.'); return; }
+    if (!q && date > today) { setErr('La fecha no puede ser futura.'); return; }
+    if (cfg.desde && date < cfg.desde && !(p && p.date === date)) { setErr('La fecha no puede ser anterior al ' + fmtFull(cfg.desde) + ': lo anterior ya está dentro del saldo anterior. Si el disponible no coincide, usa «Ajustar».'); return; }
+    if (time && !TIME_RE.test(time)) { setErr('Revisa la hora, por ejemplo 13:04, o déjala vacía.'); return; }
+    if (!desc && (q || (p && p.src === 'mail'))) { setErr('Escribe el nombre del comercio.'); return; }
     var n = 1;
-    if (type === 'c') {
+    if (type === 'c' || q) {
       var rn = val('f-n').trim();
-      if (!/^\d+$/.test(rn) || +rn < 1 || +rn > MAX_N) { setErr('Indica el número de cuotas, entre 1 y ' + MAX_N + '. Usa 1 si fue sin cuotas.'); return; }
+      if (!/^\d+$/.test(rn) || +rn < 1 || +rn > MAX_N) { setErr(q ? 'Indica cuántas cuotas faltan por cobrar, entre 1 y ' + MAX_N + '.' : 'Indica el número de cuotas, entre 1 y ' + MAX_N + '. Usa 1 si fue sin cuotas.'); return; }
       n = +rn;
-      if (n > 1 && sheet.first < date.slice(0, 7)) { setErr('La cuota 1 no puede pagarse antes del mes de la compra.'); return; }
+      if (!q && n > 1 && sheet.prox < date.slice(0, 7)) { setErr('La cuota 1 no puede cobrarse antes del mes de la compra.'); return; }
     }
     var rec = { id: p ? p.id : genId(), type: type, date: date, time: time, desc: desc, amount: +raw, src: p ? p.src : 'manual', key: p ? p.key : '',
-      card: p ? p.card : '', who: type === 'c' ? sheet.who : '', n: n, first: n > 1 ? sheet.first : '', ts: p ? p.ts : Date.now() };
-    var ups = [rec];
+      card: p ? p.card : '', who: type === 'c' || q ? sheet.who : '', n: n, prox: q || n > 1 ? sheet.prox : '', ts: p ? p.ts : Date.now() };
     busy = true;
-    var ok = await commit(ups, []);
+    var ok = await commit([rec], []);
     busy = false;
     if (!ok) return;
     closeSheet();
     if (p) toast('Cambios guardados');
+    else if (q) toast('Cuotas por cobrar anotadas · ' + money(rec.amount));
     else if (type === 'a') toast('Abono anotado · +$' + dots(rec.amount));
     else toast((type === 'g' ? 'Cargo anotado · −$' : n > 1 ? 'Compra en ' + n + ' cuotas anotada · −$' : 'Compra anotada · −$') + dots(rec.amount));
   }
 
   async function saveSetup() {
-    var d = digits('f-debt'), l = digits('f-limit'), date = val('f-date'), time = val('f-time');
-    if (!/^\d+$/.test(d)) { setErr('Escribe la deuda pendiente en pesos, por ejemplo 850000. Si no debes nada, escribe 0.'); return; }
+    var u = digits('f-used'), l = digits('f-limit'), first = !cfg.desde, today = todayKey();
+    if (!/^\d+$/.test(u)) { setErr('Escribe el utilizado que muestra el banco, en pesos, por ejemplo 850000. Si no hay nada utilizado, escribe 0.'); return; }
     if (!/^\d+$/.test(l) || +l <= 0) { setErr('Escribe el cupo de la tarjeta, por ejemplo 5000000.'); return; }
-    if (+d > MAX_AMOUNT || +l > MAX_AMOUNT) { setErr('El monto es demasiado grande. Revisa los dígitos.'); return; }
-    if (!validDate(date) || !TIME_RE.test(time)) { setErr('Indica la fecha y la hora de esa deuda.'); return; }
-    if (date + 'T' + time > todayKey() + 'T' + nowTime()) { setErr('La fecha de la deuda no puede ser futura.'); return; }
-    var prev = cfg, first = !cfg.at;
-    var next = withCfg({ debt: +d, at: date + 'T' + time, limit: +l });
-    busy = true;
-    var ok = await commit([], [], next);
-    busy = false;
-    if (!ok) return;
-    closeSheet();
-    toast((first ? 'Deuda inicial: ' : 'Deuda ajustada a ') + money(next.debt) + ' · disponible ' + money(next.limit - next.debt), 'Deshacer', function () { commit([], [], prev); }, 6000);
+    if (+u > MAX_AMOUNT || +l > MAX_AMOUNT) { setErr('El monto es demasiado grande. Revisa los dígitos.'); return; }
+    var msg = 'Utilizado ' + money(+u) + ' · disponible ' + money(+l - +u), ok;
+    if (first) {
+      var d = val('f-desde');
+      if (!validDate(d)) { setErr('Indica desde qué día se registran los movimientos.'); return; }
+      if (d > today) { setErr('Ese día no puede ser futuro.'); return; }
+      // Lo anterior a ese día ya está dentro del utilizado del banco: se borra, y las cuotas que falten quedan como cuotas por cobrar
+      var plan = purgePlan(d, { limit: +l, desde: d, saldo: +u - sumFrom(d), ignored: cfg.ignored });
+      ok = await applyUndoable(plan.ups, plan.rems, plan.cfg, msg);
+    } else {
+      ok = await applyUndoable([], [], withCfg({ limit: +l, saldo: +u - (compute().used - cfg.saldo) }), msg);
+    }
+    if (ok) closeSheet();
   }
 
   function pastePreview() {
@@ -2252,10 +2210,10 @@ body { font-size: 17px; line-height: 1.38; }
     if (!out || !btn) return;
     setErr('');
     var text = val('f-paste');
-    var parsed = parseMail(text), res = pending(parsed, 'paste'), isNew = {};
-    res.ups.forEach(function (u) { isNew[u.key] = 1; });
+    var parsed = parseMail(text), res = pending(parsed, 'paste');
+    var tag = { known: ' · Ya registrada', old: ' · Anterior al ' + (cfg.desde ? fmt(cfg.desde) : '') + ', ya está en el saldo', link: ' · Ya anotada a mano: se une al aviso', 'new': '' };
     out.innerHTML = parsed.found.map(function (p) {
-      return '<li><b>' + esc(p.merchant) + '</b><i>' + money(p.amount) + '</i><span>' + fmt(p.date) + ', ' + p.time + ' · ' + WHO[p.who] + (p.n > 1 ? ' · ' + p.n + ' cuotas' : '') + (isNew[p.key] ? '' : ' · Ya registrada') + '</span></li>';
+      return '<li><b>' + esc(p.merchant) + '</b><i>' + money(p.amount) + '</i><span>' + fmt(p.date) + ', ' + p.time + ' · ' + WHO[p.who] + (p.n > 1 ? ' · ' + p.n + ' cuotas' : '') + (tag[res.st[p.key]] || '') + '</span></li>';
     }).join('');
     out.hidden = !parsed.found.length;
     var k = res.ups.length;
@@ -2287,23 +2245,6 @@ body { font-size: 17px; line-height: 1.38; }
     if (a === 'widget-off') { await widgetOff(); closeSheet(); toast('Widget desactivado. Puedes quitarlo de la pantalla de inicio.'); return; }
     if (a === 'ext-copy') { copyText(sheet.text, 'Extracto copiado'); return; }
     if (a === 'ext-xlsx') { exportExcel(); return; }
-    if (a === 'ext-pick') { sheet.step = 'pick'; renderSheet(); return; }
-    if (a === 'pay-month') {
-      var pb = payBounds(), np = addMonths(sheet.pay, +b.getAttribute('data-d') < 0 ? -1 : 1);
-      sheet.pay = np < pb[0] ? pb[0] : np > pb[1] ? pb[1] : np;
-      sheet.payAuto = false;
-      periodPreview();
-      return;
-    }
-    if (a === 'ext-close') {
-      setCortes(cfg.cortes.concat(sheet.corte), 'Periodo siguiente iniciado el ' + fmt(nextDay(sheet.corte)) + '. Los movimientos posteriores al corte quedan en él.', 'Se deshizo el cierre del periodo.');
-      return;
-    }
-    if (a === 'ext-reopen') {
-      var rc = sheet.corte;
-      setCortes(cfg.cortes.filter(function (k) { return k !== rc; }), 'Periodo reabierto: se quitó el corte del ' + fmt(rc) + '.', 'Se volvió a cerrar el periodo.');
-      return;
-    }
     if (a === 'ext-share') {
       try { navigator.share({ title: 'Extracto Master', text: sheet.text }).catch(function () {}); } catch (e) { copyText(sheet.text, 'Extracto copiado'); }
       return;
@@ -2320,12 +2261,12 @@ body { font-size: 17px; line-height: 1.38; }
     }
     if (a === 'type') {
       var t = b.getAttribute('data-t'), k = KIND[t];
-      if (!k || sheet.id) return;
+      if (!k || sheet.id || t === 'q') return;
       sheet.type = t;
       Array.prototype.forEach.call(sheetEl.querySelectorAll('[data-act="type"]'), function (x) { x.setAttribute('aria-pressed', String(x.getAttribute('data-t') === t)); });
       var d = document.getElementById('f-desc'), dl = document.getElementById('f-descs');
       document.getElementById('f-hint').textContent = k.hint;
-      document.getElementById('f-amount-label').textContent = t === 'c' ? 'Monto total' : 'Monto';
+      document.getElementById('f-amount-label').textContent = k.amount;
       document.getElementById('f-desc-label').textContent = k.label;
       document.getElementById('f-save').textContent = k.save;
       document.getElementById('f-buy').hidden = t !== 'c';
@@ -2346,8 +2287,8 @@ body { font-size: 17px; line-height: 1.38; }
       return;
     }
     if (a === 'month') {
-      sheet.first = addMonths(sheet.first, +b.getAttribute('data-d') < 0 ? -1 : 1);
-      sheet.firstAuto = false;
+      sheet.prox = addMonths(sheet.prox, +b.getAttribute('data-d') < 0 ? -1 : 1);
+      sheet.proxAuto = false;
       cuotaPreview();
       return;
     }
@@ -2361,7 +2302,7 @@ body { font-size: 17px; line-height: 1.38; }
       busy = true;
       var ok = await commit([], [p.id], next);
       busy = false;
-      if (ok) { closeSheet(); toast('Movimiento eliminado', 'Deshacer', function () { commit([snap], [], next ? prev : null); }, 6000); }
+      if (ok) { closeSheet(); toast(p.type === 'q' ? 'Cuotas eliminadas' : 'Movimiento eliminado', 'Deshacer', function () { commit([snap], [], next ? prev : null); }, 6000); }
     }
   });
 
@@ -2370,17 +2311,17 @@ body { font-size: 17px; line-height: 1.38; }
     if (!sheet || busy) return;
     if (sheet.mode === 'setup') saveSetup();
     else if (sheet.mode === 'box') connectBox();
+    else if (sheet.mode === 'purge') doPurge(document.getElementById('f-purge-go'));
     else if (sheet.mode === 'add' || sheet.mode === 'edit') saveMove();
-    else if (sheet.mode === 'extract' && sheet.step !== 'view') genExtract();
   });
 
   sheetEl.addEventListener('input', function (ev) {
     var t = ev.target;
-    if (!t) return;
-    if (t.id === 'f-amount' || t.id === 'f-debt' || t.id === 'f-limit') {
+    if (!t || !sheet) return;
+    if (t.id === 'f-amount' || t.id === 'f-used' || t.id === 'f-limit') {
       // El monto se muestra con separador de miles mientras se escribe
       var d = t.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, 10);
-      if (t.id !== 'f-debt') d = d.replace(/^0+/, '');
+      if (t.id !== 'f-used') d = d.replace(/^0+/, '');
       t.value = d ? dots(+d) : '';
       if (t.id === 'f-amount') cuotaPreview(); else setupPreview();
     } else if (t.id === 'f-n') {
@@ -2388,12 +2329,14 @@ body { font-size: 17px; line-height: 1.38; }
       cuotaPreview();
     } else if (t.id === 'f-paste') {
       pastePreview();
-    } else if (t.id === 'f-corte') {
-      corteInput();
-    } else if (t.id === 'f-date' || t.id === 'f-time') {
-      var n = document.getElementById('f-note'), msg = sheet && sheet.mode !== 'setup' ? anchorNote(val('f-date'), val('f-time')) : '';
+    } else if (t.id === 'f-purge') {
+      purgePreview();
+    } else if (t.id === 'f-desde') {
+      setupPreview();
+    } else if (t.id === 'f-date') {
+      var n = document.getElementById('f-note'), msg = beforeNote(t.value);
       if (n) { n.textContent = msg; n.hidden = !msg; }
-      if (t.id === 'f-date' && sheet && sheet.firstAuto && validDate(t.value)) { sheet.first = firstFor(t.value); cuotaPreview(); }
+      if (sheet.proxAuto && validDate(t.value)) { sheet.prox = proxFor(t.value); cuotaPreview(); }
     }
   });
 
@@ -2409,12 +2352,13 @@ body { font-size: 17px; line-height: 1.38; }
     if (!b) return;
     var a = b.getAttribute('data-act');
     if (a === 'add') openSheet('add', null, { type: KIND[b.getAttribute('data-t')] ? b.getAttribute('data-t') : 'c' });
-    else if (a === 'add-cuotas') openSheet('add', null, { type: 'c', n: 3 });
+    else if (a === 'add-q') openSheet('add', null, { type: 'q', n: 1 });
     else if (a === 'edit') openSheet('edit', b.getAttribute('data-id'));
     else if (a === 'setup') openSheet('setup');
     else if (a === 'paste') openSheet('paste');
     else if (a === 'box') openSheet('box');
     else if (a === 'extract') openSheet('extract');
+    else if (a === 'purge') openSheet('purge');
     else if (a === 'sync') syncBox(true);
     else if (a === 'order') { prefs.order = prefs.order === 'desc' ? 'asc' : 'desc'; savePrefs(); render(); }
     else if (a === 'filter') { filter = b.getAttribute('data-f'); shown = PAGE; render(); }
@@ -2426,7 +2370,7 @@ body { font-size: 17px; line-height: 1.38; }
 
   function backupCopy() {
     var ta = document.getElementById('bk-text');
-    var json = JSON.stringify({ app: 'master', v: 1, tarjeta: cfg, movimientos: items.map(function (m) { return copyOf(m); }) });
+    var json = JSON.stringify({ app: 'master', v: 2, tarjeta: cfg, movimientos: items.map(function (m) { return copyOf(m); }) });
     ta.value = json;
     function manual() { ta.focus(); ta.select(); toast('Selecciona el texto y cópialo'); }
     try {
@@ -2435,6 +2379,7 @@ body { font-size: 17px; line-height: 1.38; }
     } catch (e) { manual(); }
   }
 
+  // Acepta los respaldos de esta versión y los de la anterior (deuda inicial con fecha y hora)
   async function backupRestore(btn) {
     var ta = document.getElementById('bk-text');
     var list = [], nextCfg;
@@ -2442,10 +2387,10 @@ body { font-size: 17px; line-height: 1.38; }
       var data = JSON.parse(ta.value);
       if (!data || !Array.isArray(data.movimientos)) throw new Error('formato');
       data.movimientos.forEach(function (p) { var n = norm(p); if (n) list.push(n); });
-      nextCfg = normCfg(data.tarjeta);
+      nextCfg = normCfg(data.tarjeta, list);
     } catch (e) { toast('El texto no es un respaldo válido'); return; }
-    if (!list.length && !nextCfg.at) { toast('El respaldo no tiene movimientos'); return; }
-    if ((items.length || cfg.at) && !restoreArmed) {
+    if (!list.length && !nextCfg.desde) { toast('El respaldo no tiene movimientos'); return; }
+    if ((items.length || cfg.desde) && !restoreArmed) {
       restoreArmed = true; btn.textContent = 'Toca de nuevo para reemplazar';
       toast('Esto reemplaza los datos actuales');
       return;
@@ -2456,7 +2401,10 @@ body { font-size: 17px; line-height: 1.38; }
     busy = true;
     var ok = await commit(list, items.filter(function (m) { return !keep[m.id]; }).map(function (m) { return m.id; }), nextCfg);
     busy = false;
-    if (ok) toast('Respaldo restaurado');
+    if (!ok) return;
+    toast('Respaldo restaurado');
+    // El buzón se relee completo: los avisos de las compras del respaldo se unen a ellas y llegan los que falten
+    if (canSync && prefs.repo) { prefs.last = 0; savePrefs(); syncBox(false, true); }
   }
 
   async function wipe(btn) {
@@ -2464,7 +2412,7 @@ body { font-size: 17px; line-height: 1.38; }
     if (busy) return;
     var snap = items.map(function (m) { return copyOf(m); }), prev = cfg;
     busy = true;
-    var ok = await commit([], snap.map(function (m) { return m.id; }), withCfg({ debt: 0, at: '', ignored: [], cortes: [] }));
+    var ok = await commit([], snap.map(function (m) { return m.id; }), { limit: cfg.limit, desde: '', saldo: 0, ignored: [] });
     busy = false;
     if (ok) toast('Datos borrados', 'Deshacer', function () { commit(snap, [], prev); }, 9000);
   }
@@ -2479,7 +2427,7 @@ body { font-size: 17px; line-height: 1.38; }
       db = await window.claude.use('db');
       if (!db) { fallback(); return; }
       mode = 'db';
-      var ready = function () { if (gotItems && gotCfg) loading = false; render(); };
+      var ready = function () { cfg = normCfg(rawCfg, items); if (gotItems && gotCfg) loading = false; render(); };
       db.collection(COL).onSnapshot(function (snap) {
         var list = [];
         snap.docs.forEach(function (doc) {
@@ -2489,7 +2437,7 @@ body { font-size: 17px; line-height: 1.38; }
         items = list; sortItems(); gotItems = true; ready();
       }, function () { fallback(); });
       db.doc(CFG_PATH).onSnapshot(function (snap) {
-        cfg = normCfg(snap.exists ? snap.data() : null); gotCfg = true; ready();
+        rawCfg = snap.exists ? snap.data() : null; gotCfg = true; ready();
       }, function () { fallback(); });
     } catch (e) { fallback(); }
   }

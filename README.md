@@ -1,73 +1,64 @@
 # Master
 
-App personal para llevar la tarjeta de crédito Mastercard: lee los avisos de compra que el banco envía por correo, guarda fecha, comercio, monto y tarjeta (Titular o Adicional), y calcula el cupo disponible a partir de la deuda pendiente.
+App personal para llevar la tarjeta de crédito Mastercard: lee los avisos de compra que el banco envía por correo, guarda fecha, comercio, monto y tarjeta (Titular o Adicional), y muestra el cupo disponible y el utilizado.
 
 Es un registro personal. No es la app oficial del banco ni está conectada a la tarjeta.
 
 ## Qué hace
 
-- **Disponible, utilizado y total a pagar**: se parte ingresando a mano la deuda pendiente (el cupo utilizado que muestra el banco). Con el cupo de $5.000.000, la app muestra el saldo disponible, el monto utilizado y el total a pagar, que deja fuera las cuotas que vencen después de este mes. Con **Ajustar** se vuelve a cuadrar la deuda o se cambia el cupo.
-- **Lectura automática**: una automatización de Atajos envía cada correo del banco, apenas llega a Mail, a un buzón privado en GitHub. La app lee ese buzón al abrirse y agrega solo las compras con tarjeta de crédito que falten. Un mismo aviso nunca se registra dos veces.
+- **Disponible y utilizado**: se parte escribiendo el cupo y el utilizado que muestra hoy la app del banco. Desde ahí, cada compra o cargo resta del disponible y cada abono suma. Si en algún momento no coincide con el banco, **Ajustar** lo corrige escribiendo el utilizado del banco.
+- **Lectura automática**: una automatización de Atajos envía cada correo del banco, apenas llega a Mail, a un buzón privado en GitHub. La app lee ese buzón al abrirse y agrega solo las compras con tarjeta de crédito que falten. Un mismo aviso nunca se registra dos veces, y si la compra ya estaba anotada a mano (mismo día y mismo monto), el aviso se une a ella en vez de duplicarla.
+- **Pegar un aviso**: también se puede copiar el texto de un correo del banco y pegarlo.
 - **Titular o Adicional**: el aviso trae los últimos cuatro dígitos de la tarjeta. `****9908` se registra como Titular y `****4526` como Adicional.
-- **Compra, cargo y abono a mano**: cada compra y cada cargo (−) restan del disponible; cada abono (+) suma. Sirve para los cobros de la tarjeta (comisiones, intereses, seguros) y para los pagos o devoluciones.
-- **Compras en cuotas**: se ingresan con el monto total, el número de cuotas y el mes en que se paga la cuota 1. Una sección aparte muestra cada compra con sus cuotas pagadas, la cuota de este mes y las que vencen después. Una compra leída de un aviso se convierte en compra en cuotas al tocarla e indicar sus cuotas.
+- **Compra, cargo y abono a mano**: sirve para los cobros de la tarjeta (comisiones, intereses, seguros) y para los pagos o devoluciones. La hora es opcional.
+- **Cuotas pendientes**: una compra en cuotas se anota con el monto total y el número de cuotas. Las cuotas que quedan de compras anteriores se agregan en la sección **Cuotas pendientes** con lo que falta por cobrar. La sección muestra cuánto queda por cobrar y en qué facturación se cobra cada cuota.
 - **Totales por tarjeta**: cuánto suman las compras del Titular y del Adicional, más los cargos y los abonos.
-- **Extracto al corte**: pide la fecha de corte del periodo de facturación y genera el detalle de los movimientos del periodo, con el utilizado al corte, las cuotas que vencen después y el total a pagar, para compararlo con el extracto del banco. Lo posterior al corte queda fuera y pasa al periodo siguiente. Se copia como texto, se comparte o se exporta a Excel.
-- **Periodos**: si el extracto coincide con el del banco, **Iniciar el periodo siguiente** guarda la fecha de corte. El periodo nuevo parte al día siguiente con los movimientos posteriores al corte, y «Por tarjeta» muestra solo ese periodo.
+- **Extracto**: el detalle de todo lo registrado, del saldo anterior al utilizado. Se copia como texto, se comparte o se exporta a Excel.
+- **Borrar registros anteriores a una fecha**: por ejemplo, los de un extracto ya pagado. Su monto pasa al saldo anterior, así el utilizado y el disponible no cambian.
 - **Borrar un registro**: al tocar un movimiento se corrige o se elimina. Hay unos segundos para deshacer.
-- **Widget en la pantalla de inicio**: muestra el total a pagar de este mes y las tres últimas compras, sin abrir la app.
+- **Widget en la pantalla de inicio**: muestra el disponible, el utilizado y las tres últimas compras, sin abrir la app.
 - **Datos y respaldo**: copia todos los datos como texto y los restaura desde ahí.
 
 ## Cómo se calcula
 
-- **Utilizado** = deuda inicial + compras + cargos − abonos, contando los movimientos desde la fecha de esa deuda.
+- **Utilizado** = saldo anterior + compras + cargos + cuotas por cobrar de compras anteriores − abonos.
 - **Disponible** = cupo − utilizado.
-- Los movimientos anteriores a la fecha de la deuda inicial ya están dentro de ella: quedan como historial y no cambian el saldo.
-- **Total a pagar** = utilizado − cuotas que vencen después de este mes. Si no hay compras en cuotas, es igual al utilizado.
-- Una compra en cuotas ocupa el cupo por su monto total desde el día de la compra, igual que en el banco, y se libera con cada abono. Por eso el disponible calza con el del banco aunque el total a pagar sea menor.
-- Las cuotas se cuentan por mes calendario. La cuota 1 se paga en el mes indicado al anotar la compra (por omisión, el del extracto que incluye la compra, ver más abajo) y las demás, una por mes. Las de meses anteriores cuentan como pagadas, la de este mes entra en el total a pagar y las de meses siguientes quedan fuera hasta que llegue su mes.
-- Ejemplo: una compra en 2 cuotas con la cuota 1 en octubre. En octubre, el total a pagar incluye la cuota 1 y deja fuera la cuota 2, que entra en noviembre.
-- Las cuotas no se marcan a mano y no cambian el saldo. El disponible sube cuando se anota el abono.
-- El valor de cada cuota es el total dividido en partes iguales, sin intereses. Si la compra tiene interés, conviene ingresar como monto total lo que se va a pagar en total.
-- Una compra en cuotas anterior a la deuda inicial se anota con su fecha real: queda como historial, no cambia el saldo y sus cuotas futuras igual se descuentan del total a pagar.
+- El **saldo anterior** es lo utilizado antes del primer día que registra la app, sin las cuotas que se anotan aparte en «Cuotas pendientes». La app lo calcula sola: al partir y en **Ajustar** se escribe el utilizado del banco y el saldo anterior queda en lo que haga falta para que coincidan.
+- Las compras de días anteriores al saldo ya están dentro de él: los avisos de esos días no se registran y no se pueden anotar movimientos con esas fechas.
+- Una compra en cuotas ocupa el cupo por su monto total desde el día de la compra, igual que en el banco, y se libera con cada abono.
 
-## Extracto al corte
+## Cuotas
 
-El banco cierra el periodo de facturación en la **fecha de corte** y envía el extracto varios días después. Las compras de esos días ya no entran en ese extracto: van al periodo siguiente. Para comparar con lo que envía el banco, **Generar extracto** primero pide:
+- Cada cuota se cobra en la **facturación** de un mes, una por mes. Al anotar una compra en cuotas se indica en qué facturación se cobra la cuota 1. La app sugiere la del mismo mes si la compra es hasta el día 22 y la del mes siguiente si es posterior (el banco cierra la facturación cerca de ese día; se cambia en `CIERRE`, al comienzo del código).
+- Una cuota queda **cobrada** cuando cierra su facturación. Hasta entonces está **por cobrar**.
+- Lo que falta por cobrar ya está dentro del utilizado. Las cuotas no se marcan a mano y no cambian el saldo: el disponible sube cuando se anota el abono.
+- El valor de cada cuota es el total dividido en partes iguales, sin intereses; la última absorbe el redondeo.
+- **Cuotas por cobrar de una compra anterior**: se agregan en «Cuotas pendientes» con el comercio, el monto que falta, cuántas cuotas quedan y en qué facturación se cobra la próxima.
 
-- **Fecha de corte**: el día en que cierra el periodo. Ese día entra completo. Sugiere un mes después del último corte guardado o, si ese día aún no llega, hoy.
-- **El extracto se paga en**: el mes en que se paga ese extracto, el mismo del corte o hasta dos meses después. De las compras en cuotas, entran en el total las cuotas que se pagan hasta ese mes. La app recuerda la elección.
+## Borrar registros anteriores a una fecha
 
-Antes de generarlo, muestra el periodo, cuántos movimientos tiene, el total a pagar y cuántos movimientos posteriores al corte quedan fuera.
+Al final de **Movimientos**, **Borrar registros anteriores a una fecha** borra los movimientos de los días anteriores a la fecha elegida:
 
-El extracto muestra:
+- Su monto pasa al saldo anterior, que queda a esa fecha. El utilizado y el disponible no cambian.
+- Las compras en cuotas que aún tienen cuotas por cobrar no se pierden: lo que falta por cobrar queda en «Cuotas pendientes».
+- Antes de borrar muestra cuántos registros se van, el saldo anterior que resulta y pide tocar dos veces. Después hay unos segundos para deshacer.
 
-- La deuda al inicio del periodo: la deuda inicial en el primer periodo y, después, la deuda al corte anterior.
-- Los movimientos del periodo, desde el día siguiente al corte anterior (o desde la deuda inicial) hasta la fecha de corte.
-- **Utilizado al corte** = deuda al inicio del periodo + compras + cargos − abonos del periodo.
-- **Total a pagar** = utilizado al corte − cuotas que vencen después del mes de pago.
-- **Después del corte**: los movimientos posteriores, que no entran en este extracto y quedan para el periodo siguiente.
+## Extracto
 
-### Iniciar el periodo siguiente
+**Generar extracto** muestra todo lo registrado desde el saldo anterior:
 
-Si el extracto coincide con el del banco, **Iniciar el periodo siguiente** guarda la fecha de corte:
+- Cupo, utilizado y disponible.
+- El saldo anterior y cada movimiento, con los montos como deuda: compras, cargos y cuotas en positivo, abonos en negativo.
+- **Totales**: saldo anterior + compras del Titular + compras del Adicional + cargos − abonos + cuotas de compras anteriores = utilizado.
+- **Cuotas pendientes**: lo que falta por cobrar de cada compra en cuotas y en qué facturaciones.
 
-- El periodo nuevo parte al día siguiente del corte y lleva los movimientos posteriores. El próximo extracto parte desde ahí, con la deuda al corte como saldo inicial.
-- «Por tarjeta» muestra solo el periodo abierto, y el listado de movimientos marca cada corte.
-- El disponible no cambia: el cupo se sigue calculando con todos los movimientos.
-- Con un corte guardado, el mes de la cuota 1 de una compra nueva sale del día del corte. Por ejemplo, con corte el día 20 y pago el mismo mes, una compra del 12 de octubre paga la cuota 1 en octubre y una del 25 de octubre, en noviembre.
-- Un periodo cerrado se puede volver a ver con su fecha de corte, y **Reabrir este periodo** quita el corte.
+### Exportar a Excel
 
-El total a pagar de la pantalla principal y del widget se sigue calculando con todos los movimientos y las cuotas de este mes.
+**Exportar a Excel** genera el archivo `Extracto Master aaaa-mm-dd.xlsx` con estas hojas:
 
-## Exportar el extracto a Excel
-
-En el extracto, **Exportar a Excel** genera el archivo `Extracto Master corte aaaa-mm-dd.xlsx`, con la fecha de corte en el nombre, y estas hojas:
-
-- **Resumen**: fecha de corte, periodo y mes de pago; cupo, utilizado al corte, disponible al corte y total a pagar, más el detalle que lleva de la deuda al inicio del periodo al total (compras del Titular y del Adicional, cargos, abonos y cuotas que vencen después).
-- **Movimientos**: la deuda al inicio del periodo y una fila por movimiento del periodo, con número, fecha, hora, descripción, tipo, tarjeta, cuotas y monto. Los montos van como deuda (compras y cargos en positivo, abonos en negativo), así que la suma de la columna es el utilizado al corte. Trae filtros y la primera fila fija.
-- **Cuotas**: una fila por compra en cuotas hasta el corte, con el valor de la cuota, el mes de la primera y de la última, las pagadas, la del mes de pago y las que vencen después. Solo aparece si hay compras en cuotas.
-- **Después del corte**: los movimientos posteriores al corte, que quedan para el periodo siguiente. Solo aparece si los hay.
+- **Resumen**: cupo, utilizado y disponible, más el detalle que lleva del saldo anterior al utilizado.
+- **Movimientos**: el saldo anterior y una fila por movimiento, con número, fecha, hora, descripción, tipo, tarjeta, cuotas y monto. La suma de la columna «Monto» es el utilizado. Trae filtros y la primera fila fija.
+- **Cuotas**: una fila por compra en cuotas, con el valor de la cuota, la primera y la última facturación, las cobradas, las que faltan y la próxima facturación. Solo aparece si hay cuotas.
 
 En el iPhone el archivo se entrega por la hoja de compartir, para guardarlo en Archivos, abrirlo en Excel o Numbers, o enviarlo. En un computador se descarga. El archivo se arma en el dispositivo, sin conexión y sin enviar los datos a ningún servicio.
 
@@ -145,14 +136,15 @@ La única condición es que la automatización filtre **solo por remitente**. Si
 - En **Buzón y atajo** la app muestra los últimos correos que llegaron al buzón y qué hizo con cada uno, y avisa si llegaron compras de otra tarjeta de crédito.
 - Para comprobar que Atajos funciona, mira la pestaña **Issues** del repositorio después de una compra: debe aparecer un *issue* nuevo con el texto del correo.
 - Una compra eliminada en la app no vuelve a aparecer al leer el buzón. Para recuperarla, se pega su aviso a mano con **Pegar un aviso**.
-- Las compras del buzón anteriores a la fecha de la deuda inicial entran como historial y no cambian el saldo.
+- Las compras del buzón anteriores al saldo anterior no se registran: ya están dentro de él.
+- Si una compra ya está anotada a mano con la misma fecha y el mismo monto, su aviso se une a ella y no se duplica. Así se pueden anotar compras a mano (por ejemplo, desde la cartola del banco) y dejar que los avisos lleguen después.
 - La lectura del buzón funciona en la app publicada en GitHub Pages. Dentro de Claude, la página no puede llamar a GitHub y las compras se agregan pegando el aviso.
 
 ### Si llega un correo y la compra no aparece
 
 1. Toca **Actualizar**. Al volver a la app, el buzón se relee solo si pasaron más de dos minutos desde la última lectura.
 2. Abre **Buzón y atajo** y mira **Últimos correos del buzón**. Ahí están los últimos correos que recibió el buzón, del más reciente al más antiguo, con lo que la app hizo con cada uno.
-3. Si el correo no está en la lista, no llegó al buzón: el problema está en la automatización de Atajos (tiene una condición de asunto que lo dejó fuera, no se ejecutó o GitHub rechazó el envío). Un correo que Atajos no envió en su momento no llega después: esa compra se agrega con **Pegar un aviso**. Si está en la lista, la app dice por qué no lo registró: era una compra con cargo a la cuenta, en dólares, con otra tarjeta, una compra que eliminaste o un correo que no reconoce como aviso de compra.
+3. Si el correo no está en la lista, no llegó al buzón: el problema está en la automatización de Atajos (tiene una condición de asunto que lo dejó fuera, no se ejecutó o GitHub rechazó el envío). Un correo que Atajos no envió en su momento no llega después: esa compra se agrega con **Pegar un aviso**. Si está en la lista, la app dice por qué no lo registró: era una compra con cargo a la cuenta, en dólares, con otra tarjeta, anterior al saldo anterior, una compra que eliminaste o un correo que no reconoce como aviso de compra.
 4. Mientras tanto, la compra se puede agregar con **Pegar un aviso**.
 
 El botón **Copiar este detalle** copia la lista con el texto de cada correo, para revisar un aviso que la app no reconoce.
@@ -161,20 +153,20 @@ El botón **Copiar este detalle** copia la lista con el texto de cada correo, pa
 
 ## Widget en la pantalla de inicio
 
-Muestra el total a pagar de este mes y las tres últimas compras, cada una con una **T** (Titular) o una **A** (Adicional). Una app web no puede crear widgets en iPhone, así que el widget se hace con **Scriptable**, una app gratuita que dibuja widgets a partir de un script.
+Muestra el disponible, el utilizado y las tres últimas compras, cada una con una **T** (Titular) o una **A** (Adicional). Una app web no puede crear widgets en iPhone, así que el widget se hace con **Scriptable**, una app gratuita que dibuja widgets a partir de un script.
 
 1. Instala **Scriptable** desde el App Store.
 2. En Master, entra a **Buzón y atajo → Widget en la pantalla de inicio** y toca **Copiar el script del widget**. El script va completo, con el buzón y el token.
-3. Abre Scriptable, toca **+** y pega el script. Nómbralo **Master** y ejecútalo con **▶**: debe mostrar el total a pagar.
+3. Abre Scriptable, toca **+** y pega el script. Nómbralo **Master** y ejecútalo con **▶**: debe mostrar el disponible.
 4. En la pantalla de inicio, mantén presionado un espacio vacío, toca **Editar → Agregar widget**, busca **Scriptable** y elige el tamaño mediano.
 5. Mantén presionado el widget nuevo, toca **Editar widget** y en **Script** elige **Master**.
 
 Cómo funciona:
 
-- Al activarlo, Master publica el utilizado, las compras en cuotas y las últimas compras en un hito (*milestone*) del repositorio privado del buzón, llamado «Master · widget». El script los lee y les suma las compras con la tarjeta que llegaron al buzón después, así el widget se pone al día aunque no abras Master.
-- El total a pagar se calcula igual que en la app: el utilizado menos las cuotas que vencen después de este mes. El script lo recalcula con la fecha del teléfono, de modo que al cambiar el mes entran solas las cuotas que corresponden.
+- Al activarlo, Master publica el utilizado, el cupo y las últimas compras en un hito (*milestone*) del repositorio privado del buzón, llamado «Master · widget». El script los lee y les suma las compras con la tarjeta que llegaron al buzón después, así el widget se pone al día aunque no abras Master.
+- Si el script se copió antes de esta versión (cuando mostraba el total a pagar), hay que copiarlo de nuevo desde Master y reemplazarlo en Scriptable.
 - iOS decide cada cuánto actualiza el widget, normalmente cada varios minutos. No es instantáneo.
-- Los cargos, los abonos, los ajustes de la deuda y las compras anotadas a mano solo existen dentro de Master: el widget los refleja después de abrir la app.
+- Los cargos, los abonos, los ajustes y las compras anotadas a mano solo existen dentro de Master: el widget los refleja después de abrir la app.
 - Al tocar el widget se abre Scriptable, no Master: iOS no permite abrir una app web instalada desde un widget.
 - También sirve en tamaño pequeño y en la pantalla bloqueada (rectangular).
 - El widget de Master y el de FAN conviven: usan el mismo buzón, pero cada uno tiene su propio script y su propio hito.
@@ -203,10 +195,12 @@ Se abre como app independiente, con su icono, y funciona sin conexión.
 
 ## Datos
 
-Los movimientos y la deuda quedan en el `localStorage` del navegador, en el dispositivo. Este repositorio solo contiene el código de la app. Los correos del banco pasan por el buzón, que es un repositorio privado aparte.
+Los movimientos y el saldo quedan en el `localStorage` del navegador, en el dispositivo. Este repositorio solo contiene el código de la app. Los correos del banco pasan por el buzón, que es un repositorio privado aparte.
 
-- `master-movimientos`: cada movimiento con tipo (`c` compra, `g` cargo, `a` abono), fecha (`date`), hora (`time`), descripción (`desc`), monto en pesos (`amount`), origen (`mail` o `manual`), tarjeta (`who`: `T` titular o `A` adicional; `card`: los cuatro dígitos del aviso), número de cuotas (`n`), mes en que se paga la cuota 1 (`first`, como `aaaa-mm`) y, en las compras leídas de un aviso, la clave que evita duplicados (`key`).
-- `master-tarjeta`: la deuda inicial (`debt`), desde cuándo rige (`at`), el cupo (`limit`), los avisos eliminados a propósito (`ignored`), las fechas de corte de los periodos cerrados (`cortes`) y cuántos meses después del corte se paga el extracto (`payOff`).
+- `master-movimientos`: cada movimiento con tipo (`c` compra, `g` cargo, `a` abono, `q` cuotas por cobrar de una compra anterior), fecha (`date`), hora opcional (`time`), descripción (`desc`), monto en pesos (`amount`), origen (`mail` o `manual`), tarjeta (`who`: `T` titular o `A` adicional; `card`: los cuatro dígitos del aviso), número de cuotas (`n`), facturación de la primera cuota (`prox`, como `aaaa-mm`) y, en las compras leídas de un aviso, la clave que evita duplicados (`key`).
+- `master-tarjeta`: el cupo (`limit`), el primer día que registra la app (`desde`), el saldo anterior a ese día (`saldo`) y los avisos eliminados a propósito (`ignored`).
+
+Los datos y los respaldos de la versión anterior (deuda inicial con fecha y hora, periodos con fecha de corte) se leen solos: la deuda inicial pasa a ser el saldo anterior.
 - `master-preferencias`: orden del listado, repositorio y token del buzón, momento de la última lectura y si el widget está activado.
 
 ## Icono
